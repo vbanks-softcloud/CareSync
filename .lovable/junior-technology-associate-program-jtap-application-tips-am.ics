@@ -1,0 +1,35 @@
+BEGIN:VCALENDAR
+PRODID:-//AddEvent Inc//AddEvent.com v1.7//EN
+VERSION:2.0
+BEGIN:VTIMEZONE
+TZID:America/Chicago
+BEGIN:STANDARD
+DTSTART:20261101T010000
+RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0600
+TZNAME:CST
+END:STANDARD
+BEGIN:DAYLIGHT
+DTSTART:20260308T030000
+RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3
+TZOFFSETFROM:-0600
+TZOFFSETTO:-0500
+TZNAME:CDT
+END:DAYLIGHT
+END:VTIMEZONE
+BEGIN:VEVENT
+DESCRIPTION:Southwest Airlines is hosting a virtual info session to share more about our Junior Technology Associate Program (JTAP)\, application tips & tricks\, and what to expect during our application process. Join us on Wednesday\, May 13 from 12:00 - 1:00 p.m. CT to learn about the program\, hear what participants can expect\, and get your questions answered. Register today to attend!
+X-ALT-DESC;FMTTYPE=text/html:Southwest Airlines is hosting a virtual info session to share more about our Junior Technology Associate Program (JTAP), application tips &amp; tricks, and what to expect during our application process. Join us on Wednesday, May 13 from 12:00 - 1:00 p.m. CT to learn about the program, hear what participants can expect, and get your questions answered. Register today to attend!
+UID:1778691833addeventcom
+SUMMARY:Junior Technology Associate Program (JTAP) - Application Tips & Tricks
+DTSTART;TZID=America/Chicago:20260513T120000
+DTEND;TZID=America/Chicago:20260513T130000
+DTSTAMP:20260513T170353Z
+TRANSP:OPAQUE
+STATUS:CONFIRMED
+SEQUENCE:0
+LOCATION:https://teams.microsoft.com/meet/281516224676270?p=S9kbAGvxlQpVynFKUf
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+END:VEVENT
+END:VCALENDAR
