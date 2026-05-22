@@ -28,8 +28,9 @@ A clinical voice-notes web app built with **TanStack Start**, **React 19**, **Ta
 ## Getting Started
 
 ```bash
-# 1. Navigate to the project
-cd caresync
+# 1. Clone and enter the repo
+git clone <repo-url>
+cd CareSync
 
 # 2. Make sure you are on Node 20.19+ / 22.12+
 node --version
@@ -59,8 +60,10 @@ The dev server will be available at:
 
 ## Project Structure
 
+All project files now live at the repository root (previously they were nested under a `caresync/` subfolder).
+
 ```
-caresync/
+CareSync/
 ├── src/
 │   ├── components/      # UI components (shadcn/ui in src/components/ui)
 │   ├── hooks/           # Reusable React hooks
