@@ -49,6 +49,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The gitleaks/gitleaks-action wrapper now requires a paid license for
+      # organization-owned repos. The gitleaks binary itself is still MIT-
+      # licensed, so we run it directly via the install action (no license
+      # needed). Behaves the same: scans full history, fails the job on a
+      # secret match, uploads a SARIF report.
+      - uses: gacts/gitleaks@v1
+        with:
+          version: "8.21.2"
+
+      - name: Run gitleaks (detect secrets in full history)
+        run: |
+          gitleaks detect \
+            --source . \
+            --redact \
+            --verbose \
+            --no-banner \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 1
+
+      - name: Upload SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
