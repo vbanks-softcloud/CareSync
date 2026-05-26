@@ -1,56 +1,213 @@
-# CareSync AI
+# CareSync
 
-Monorepo for **CareSync**, a clinical voice-notes platform. The repo is organized as multiple workspaces around an **AWS-hosted** stack:
+CareSync is a clinical voice-notes web app: caregivers press a button, dictate a note about a patient, and the app turns it into a structured, searchable medical record.
 
-- **Frontend** — TanStack Router SPA (Vite build), served as static assets from **S3 + CloudFront**
-- **Backend** — AWS Lambda functions managed by **Serverless Framework**, fronted by API Gateway, with Cognito (MFA) for auth
+This guide gets a brand-new teammate from a fresh laptop all the way to "the app is running on my machine" — even if you've never opened a terminal before. If you get stuck on any step, ask the team (or jump to [Troubleshooting](#troubleshooting) at the bottom).
 
-## Repository structure
+**The live demo:** <https://d3d2fj30gh2tf0.cloudfront.net/>
+
+---
+
+## Part 1 — First-time setup (~20 min, do this once)
+
+You only do these steps the very first time you set up your computer. After this, starting the app each day is just two commands.
+
+### Step 1. Install the tools
+
+You need three things installed on your computer. The links below take you to the official download pages.
+
+#### 1a. Node.js (the JavaScript runtime the app uses)
+
+- **Windows or macOS:** go to <https://nodejs.org/> and click the **"LTS"** big green button (it'll say something like "22.x.x LTS"). Run the installer. Click "Next" through every screen — the defaults are fine.
+
+To check it worked, open a terminal:
+- **Windows:** press the Windows key, type `Git Bash`, hit Enter. (You'll get Git Bash after Step 1b. For now use **PowerShell**.)
+- **macOS:** press Cmd+Space, type `Terminal`, hit Enter.
+
+Then paste this and press Enter:
+
+```bash
+node --version
+```
+
+You should see something like `v22.22.3`. If you see `command not found`, close the terminal and reopen it (the installer added Node to your PATH but the old terminal won't see it yet).
+
+#### 1b. Git (the tool that downloads + tracks code)
+
+- **Windows:** go to <https://git-scm.com/download/win> — the download starts automatically. Run the installer. Again, click "Next" through every screen with the defaults. This also gives you **Git Bash**, a terminal that works just like the one on macOS.
+- **macOS:** open Terminal and run `git --version`. macOS will prompt to install developer tools — click Install. (Or install via <https://git-scm.com/download/mac>.)
+
+To check it worked:
+
+```bash
+git --version
+```
+
+You should see something like `git version 2.46.0`.
+
+#### 1c. A code editor — Cursor or VS Code
+
+You can edit code in any text editor, but these two are designed for the job. Pick one:
+
+- **Cursor** (recommended — has an AI assistant built-in): <https://cursor.com/>
+- **VS Code** (the industry standard): <https://code.visualstudio.com/>
+
+Run the installer and accept the defaults.
+
+### Step 2. Download the project
+
+Open a terminal (Git Bash on Windows, Terminal on macOS) and pick a folder to put the project in. For example, your Documents folder:
+
+```bash
+cd ~/Documents
+```
+
+> `cd` means "change directory". `~` means "my home folder". So this command says: "go to my Documents folder."
+
+Now download (clone) the project from GitHub:
+
+```bash
+git clone https://github.com/vbanks-softcloud/CareSync.git
+```
+
+You'll see something like `Receiving objects: 100%... done.`. This created a new folder called `CareSync` with all the project files in it.
+
+Move into that folder:
+
+```bash
+cd CareSync
+```
+
+> From here on, **every command in this guide assumes you are inside the `CareSync` folder.** If a command doesn't work, the first thing to check is that you're in the right folder — run `pwd` (Print Working Directory) and make sure it ends in `/CareSync`.
+
+### Step 3. Install the project's libraries
+
+The project depends on a bunch of open-source libraries (React, TypeScript, etc.). One command pulls them all down:
+
+```bash
+npm install
+```
+
+You'll see a progress indicator and lots of text scrolling. It can take **2–5 minutes** the first time. When it's done, it'll print something like `added 748 packages in 14s`.
+
+You'll also notice a new folder appeared: `node_modules/`. That's where all the downloaded libraries live. It's huge (~500 MB) and it's already in `.gitignore` so it's never uploaded to GitHub.
+
+### Step 4. Open the project in your editor
+
+In your terminal:
+
+```bash
+cursor .          # if you installed Cursor
+# or
+code .            # if you installed VS Code
+```
+
+> The `.` means "the current folder". This opens the whole `CareSync` project in the editor.
+
+---
+
+## Part 2 — Run the app every day
+
+Now you can run the app. From inside the `CareSync` folder, in a terminal:
+
+```bash
+npm run dev:frontend
+```
+
+After a couple of seconds you'll see:
+
+```
+  VITE v7.3.3  ready in 1242 ms
+  ➜  Local:   http://localhost:8080/
+```
+
+**Open <http://localhost:8080/> in your browser.** You should see the CareSync landing page.
+
+**Hot reload:** while the dev server is running, open any file under `frontend/src/` in your editor and save a change (e.g. change a heading). The browser will refresh automatically with your edit — no need to restart anything.
+
+### To stop the dev server
+
+In the terminal window where it's running, press **`Ctrl + C`** (on both Windows and Mac). You'll get back to a normal prompt.
+
+### To start it again tomorrow
+
+```bash
+cd ~/Documents/CareSync
+npm run dev:frontend
+```
+
+That's it. Two commands.
+
+---
+
+## Part 3 — Common commands cheat sheet
+
+Run all of these from inside the `CareSync` folder.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev:frontend` | Start the website locally on http://localhost:8080 |
+| `npm run dev:backend` | Start the backend API locally on http://localhost:3000 |
+| `npm run build:frontend` | Make a production-ready build (used by deploy) |
+| `npm run lint` | Check the code for style/syntax mistakes |
+| `npm run format` | Auto-fix formatting across the project |
+| `git status` | See which files you've changed |
+| `git pull` | Download the latest changes from teammates |
+
+If a command fails, scroll down to [Troubleshooting](#troubleshooting).
+
+---
+
+## Part 4 — Daily git workflow (saving your changes)
+
+When you've made changes you want to share:
+
+```bash
+git pull                                 # get teammates' latest changes first
+git checkout -b feature/my-change        # make a new branch for your work
+# ...edit some files...
+git status                               # see what you changed
+git add .                                # stage all your changes
+git commit -m "describe your change"     # save them to the branch
+git push -u origin feature/my-change     # upload the branch to GitHub
+```
+
+Then open <https://github.com/vbanks-softcloud/CareSync/pulls> and create a Pull Request from your branch into `develop`. A teammate reviews it, and once approved it gets merged.
+
+> **Never edit `main` directly.** Always work on a feature branch and open a PR.
+
+---
+
+## Repository structure (reference)
 
 ```
 CareSync/
-├── .github/
-│   ├── workflows/
-│   │   ├── frontend-deploy.yml         # build & sync to S3 / invalidate CloudFront
-│   │   ├── backend-deploy.yml          # serverless deploy
-│   │   ├── test-workflow.yml           # lint + build + test on push/PR
-│   │   ├── security-scan.yml           # npm audit, CodeQL, gitleaks
-│   │   └── pull-request-check.yml      # per-area PR checks
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md
-│   │   ├── feature_request.md
-│   │   └── task_template.md
-│   ├── PULL_REQUEST_TEMPLATE.md
-│   └── CODEOWNERS
+├── .github/                # GitHub Actions workflows, issue & PR templates
 │
-├── frontend/                # TanStack Router SPA (S3 + CloudFront target)
-│   ├── index.html           # Vite SPA entry document
+├── frontend/               # The web app you see in the browser
+│   ├── index.html          # Entry HTML page
 │   ├── src/
-│   │   ├── main.tsx         # React mount + RouterProvider
-│   │   └── routes/          # File-based routes
-│   ├── scripts/deploy-s3.mjs# One-shot local deploy helper (aws s3 sync + CF invalidation)
-│   ├── vite.config.ts
-│   └── package.json         # @caresync/frontend
+│   │   ├── main.tsx        # Where React starts
+│   │   └── routes/         # Each file = one page (e.g. index.tsx = "/")
+│   ├── scripts/            # Helper scripts (deploy, etc.)
+│   ├── vite.config.ts      # Build tool config
+│   └── package.json        # Frontend's dependencies
 │
-├── backend/                 # AWS Lambda services via Serverless Framework
-│   ├── src/handlers/
-│   ├── serverless.yml
-│   └── package.json         # @caresync/backend
+├── backend/                # The API (runs on AWS Lambda)
+│   ├── src/handlers/       # Each file = one Lambda function
+│   ├── serverless.yml      # Backend infrastructure config
+│   └── package.json        # Backend's dependencies
 │
-├── infrastructure/          # IaC for shared AWS resources
-│   └── aws/
-│       ├── frontend-cdn.yml             # S3 bucket + CloudFront distribution (OAC)
-│       └── github-oidc-deploy-role.yml  # IAM role for GitHub Actions deploys
-├── database/                # Schemas, migrations, seeds
-├── ci-cd/                   # Shared CI scripts / Dockerfiles
-├── docs/                    # Architecture, ADRs, runbooks
-├── scripts/                 # Repo-wide helper scripts
+├── infrastructure/aws/     # CloudFormation templates for AWS resources
+├── database/               # Database schemas, migrations
+├── docs/                   # Architecture notes, ADRs
+├── scripts/                # Repo-wide helper scripts
 │
-├── package.json             # npm workspaces root
-└── README.md
+├── package.json            # Top-level config (npm workspaces)
+└── README.md               # This file
 ```
 
-## Tech stack
+## Tech stack (reference)
 
 ### Frontend (`frontend/`)
 
@@ -66,57 +223,6 @@ CareSync/
 - [Serverless Framework v4](https://www.serverless.com/) + `serverless-esbuild` + `serverless-offline`
 - API Gateway (HTTP API)
 - Amazon Cognito (MFA), DynamoDB / RDS (TBD), S3, EventBridge (planned)
-
-## Prerequisites
-
-- **Node.js `>= 20.19` or `>= 22.12`**
-- **npm 10+**
-- **AWS CLI** configured (`aws configure` or SSO) for deployments
-
-If you use [nvm](https://github.com/nvm-sh/nvm):
-
-```bash
-nvm use 22.22.3
-# or make it default:
-nvm alias default 22.22.3
-```
-
-## Getting started
-
-```bash
-# 1. Clone and enter the repo
-git clone https://github.com/vbanks-softcloud/CareSync.git
-cd CareSync
-
-# 2. Confirm Node version
-node --version
-
-# 3. Install all workspaces (frontend + backend) in one go
-npm install
-
-# 4. Run the frontend dev server
-npm run dev:frontend
-# -> http://localhost:8080/
-
-# 5. Run the backend locally (serverless-offline)
-npm run dev:backend
-# -> http://localhost:3000/health
-```
-
-## Available scripts (root)
-
-| Command                    | Description                                                        |
-| -------------------------- | ------------------------------------------------------------------ |
-| `npm run dev`              | Alias for `dev:frontend`                                           |
-| `npm run dev:frontend`     | Start the Vite dev server (port `8080`)                            |
-| `npm run dev:backend`      | Run Lambda functions locally with `serverless offline` (port `3000`)|
-| `npm run build`            | Build every workspace (if a `build` script is defined)             |
-| `npm run build:frontend`   | Production build of the frontend                                   |
-| `npm run build:backend`    | Package the backend with `serverless package`                      |
-| `npm run lint`             | Lint every workspace                                               |
-| `npm run format`           | Prettier-format the whole monorepo                                 |
-| `npm run deploy:frontend`  | (stub) Deploy frontend to S3 + CloudFront                          |
-| `npm run deploy:backend`   | `serverless deploy` to the configured AWS account                  |
 
 ## Git branching strategy
 
@@ -138,7 +244,7 @@ main          ← production, protected, deploys to prod
 - Open PRs against `develop` for normal work; PRs to `main` only from `develop` (releases) or `hotfix/*`.
 - Branch protection: require PR review, passing CI, and CODEOWNERS approval on `main` and `develop`.
 
-## Deployment overview
+## Deployment
 
 | Target           | Tool                     | Triggered by                                   |
 | ---------------- | ------------------------ | ---------------------------------------------- |
@@ -146,13 +252,13 @@ main          ← production, protected, deploys to prod
 | Backend (Lambda) | Serverless Framework     | Push to `main` touching `backend/` (or manual) |
 | Infra (shared)   | CloudFormation           | Manual `aws cloudformation deploy`             |
 
-Configure AWS credentials in GitHub Actions via OIDC + an IAM role (`role-to-assume`) — no long-lived access keys.
+**You almost never need to think about this** — pushing to `main` deploys automatically. The infrastructure was set up once; the details below are for whoever is responsible for AWS.
 
 ### Frontend hosting (S3 + CloudFront)
 
 The frontend is a pure static SPA. `npm run build:frontend` produces a `frontend/dist/` directory that is uploaded to a private S3 bucket and served through a CloudFront distribution using Origin Access Control.
 
-1. **Provision the bucket + distribution** (one-time, in `us-east-1`):
+1. **Provision the bucket + distribution** (one-time):
 
    ```bash
    aws cloudformation deploy \
@@ -180,11 +286,11 @@ The frontend is a pure static SPA. `npm run build:frontend` produces a `frontend
 
 3. **Set GitHub Actions secrets** on the repo:
 
-   | Secret                | Value                                                                      |
-   | --------------------- | -------------------------------------------------------------------------- |
-   | `AWS_DEPLOY_ROLE_ARN` | Output `RoleArn` from the OIDC role stack                                  |
-   | `FRONTEND_BUCKET`     | Bucket name (e.g. `caresync-frontend-prod`)                                |
-   | `CF_DISTRIBUTION_ID`  | CloudFront distribution ID (output `DistributionId` from the CDN stack)    |
+   | Secret                | Value                                                                   |
+   | --------------------- | ----------------------------------------------------------------------- |
+   | `AWS_DEPLOY_ROLE_ARN` | Output `RoleArn` from the OIDC role stack                               |
+   | `FRONTEND_BUCKET`     | Bucket name (e.g. `caresync-frontend-2026`)                             |
+   | `CF_DISTRIBUTION_ID`  | CloudFront distribution ID (output `DistributionId` from the CDN stack) |
 
    After that, every push to `main` that touches `frontend/` will build, sync to S3, and invalidate CloudFront automatically.
 
@@ -193,24 +299,83 @@ The frontend is a pure static SPA. `npm run build:frontend` produces a `frontend
    ```bash
    cd frontend
    npm run build
-   CARESYNC_FRONTEND_BUCKET=caresync-frontend-prod \
+   CARESYNC_FRONTEND_BUCKET=caresync-frontend-2026 \
    CARESYNC_CF_DISTRIBUTION_ID=<DIST_ID> \
    npm run deploy
    ```
 
+---
+
 ## Troubleshooting
+
+### `command not found: node` (or `git`, or `npm`)
+
+You either haven't installed it yet (see [Step 1](#step-1-install-the-tools)), or your terminal was open before the install finished. **Close every terminal window and reopen one.** That picks up the new install.
+
+### `npm install` fails with an error mentioning `EACCES` or `permission denied`
+
+Try these in order:
+
+1. Make sure you're not running the terminal "as Administrator" / `sudo`. Just open it normally.
+2. Delete `node_modules/` and `package-lock.json` and try again:
+   ```bash
+   rm -rf node_modules package-lock.json
+   npm install
+   ```
 
 ### `Vite requires Node.js version 20.19+ or 22.12+`
 
-Switch with `nvm`:
+Your Node version is too old. Reinstall the LTS version from <https://nodejs.org/> (it'll update in-place).
+
+If you're using [nvm](https://github.com/nvm-sh/nvm):
 
 ```bash
-nvm use 22.22.3
+nvm install 22
+nvm use 22
+nvm alias default 22
 ```
 
-### `Permission denied` when moving files on Windows
+### `Port 8080 is already in use` when running `npm run dev:frontend`
 
-Stop the dev server (`npm run dev`) and any lingering `esbuild.exe` / `node.exe` processes before restructuring files.
+Another dev server is still running somewhere. Find and stop it:
+
+- **macOS/Linux:** `lsof -i :8080` shows what's using the port. `kill -9 <PID>` stops it.
+- **Windows (Git Bash):**
+  ```bash
+  netstat -ano | findstr :8080
+  # then in PowerShell or cmd:
+  taskkill //PID <PID> //F //T
+  ```
+
+Or just close every terminal window and reopen one — that usually kills lingering Node processes.
+
+### `Permission denied` moving/deleting files on Windows
+
+A dev server is still holding the file open. Stop it with `Ctrl + C`, then close any leftover `node.exe` / `esbuild.exe` processes via Task Manager.
+
+### My change isn't showing up in the browser
+
+1. Make sure the dev server is still running (look at the terminal — if it says `[vite] hmr update ...` after you save, it picked up your change).
+2. Hard-refresh the page: `Ctrl + Shift + R` (Windows) or `Cmd + Shift + R` (macOS).
+3. Check the terminal for red error messages — a typo can break the build.
+
+### Git says `Please tell me who you are`
+
+You haven't told Git your name/email yet. One-time setup:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
+### Anything else
+
+Ask in the team chat with:
+- The exact command you ran
+- The full error message (copy-paste, don't summarize)
+- Your operating system (Windows / macOS / Linux)
+
+---
 
 ## License
 
