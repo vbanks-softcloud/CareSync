@@ -45,7 +45,12 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   --shadow-clinical: 0 10px 30px -12px color-mix(in oklab, var(--primary) 30%, transparent);
-  --gradient-hero: linear-gradient(135deg, oklch(0.97 0.03 25) 0%, oklch(0.995 0.005 20) 55%, oklch(0.95 0.045 15) 100%);
+  --gradient-hero: linear-gradient(
+    135deg,
+    oklch(0.97 0.03 25) 0%,
+    oklch(0.995 0.005 20) 55%,
+    oklch(0.95 0.045 15) 100%
+  );
 }
 
 :root {
@@ -128,7 +133,10 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3, .font-display {
+  h1,
+  h2,
+  h3,
+  .font-display {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }

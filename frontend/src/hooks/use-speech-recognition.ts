@@ -22,8 +22,7 @@ export function useSpeechRecognition() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const SR =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
       setSupported(false);
       return;

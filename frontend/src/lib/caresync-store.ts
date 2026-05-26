@@ -92,10 +92,51 @@ export function structureTranscript(text: string): StructuredNote {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const concernKeys = ["pain", "concern", "report", "complain", "discomfort", "fatigue", "dizzy", "nausea", "anxious"];
-  const careKeys = ["assist", "helped", "administered", "provided", "gave", "bath", "fed", "mobility", "walk", "medication", "med "];
-  const statusKeys = ["vital", "stable", "alert", "oriented", "bp", "blood pressure", "temperature", "heart rate", "spo2"];
-  const followKeys = ["monitor", "follow", "reassess", "check", "next", "schedule", "notify", "inform"];
+  const concernKeys = [
+    "pain",
+    "concern",
+    "report",
+    "complain",
+    "discomfort",
+    "fatigue",
+    "dizzy",
+    "nausea",
+    "anxious",
+  ];
+  const careKeys = [
+    "assist",
+    "helped",
+    "administered",
+    "provided",
+    "gave",
+    "bath",
+    "fed",
+    "mobility",
+    "walk",
+    "medication",
+    "med ",
+  ];
+  const statusKeys = [
+    "vital",
+    "stable",
+    "alert",
+    "oriented",
+    "bp",
+    "blood pressure",
+    "temperature",
+    "heart rate",
+    "spo2",
+  ];
+  const followKeys = [
+    "monitor",
+    "follow",
+    "reassess",
+    "check",
+    "next",
+    "schedule",
+    "notify",
+    "inform",
+  ];
 
   const pick = (keys: string[]) =>
     sentences.filter((s) => keys.some((k) => s.toLowerCase().includes(k))).join(" ");

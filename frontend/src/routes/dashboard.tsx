@@ -163,7 +163,9 @@ function Dashboard() {
                     <div>
                       <h3 className="font-display text-lg font-semibold">Voice recording</h3>
                       <p className="text-xs text-muted-foreground">
-                        {speech.supported ? "Live transcription powered by your browser." : "Browser doesn't support live transcription — type below."}
+                        {speech.supported
+                          ? "Live transcription powered by your browser."
+                          : "Browser doesn't support live transcription — type below."}
                       </p>
                     </div>
                     {speech.listening && (
@@ -187,7 +189,13 @@ function Dashboard() {
                     <Button variant="outline" onClick={handleStructure} className="gap-2">
                       <Sparkles className="h-4 w-4" /> Structure note
                     </Button>
-                    <Button variant="ghost" onClick={() => { speech.reset(); setEditableTranscript(""); }}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        speech.reset();
+                        setEditableTranscript("");
+                      }}
+                    >
                       Clear
                     </Button>
                   </div>
@@ -253,7 +261,9 @@ function Dashboard() {
                 <div className="mb-4 flex items-center gap-2">
                   <History className="h-4 w-4 text-muted-foreground" />
                   <h3 className="font-display text-lg font-semibold">Notes history</h3>
-                  <Badge variant="secondary" className="ml-1">{notes.length}</Badge>
+                  <Badge variant="secondary" className="ml-1">
+                    {notes.length}
+                  </Badge>
                 </div>
                 {notes.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">
@@ -269,7 +279,9 @@ function Dashboard() {
               </Card>
             </>
           ) : (
-            <Card className="p-10 text-center text-muted-foreground">Select or add a patient to begin.</Card>
+            <Card className="p-10 text-center text-muted-foreground">
+              Select or add a patient to begin.
+            </Card>
           )}
         </main>
       </div>
@@ -328,7 +340,9 @@ function PatientPanel({
                   Age {p.age} · Rm {p.room ?? "—"}
                 </div>
               </div>
-              <ArrowRight className={`h-4 w-4 transition ${active ? "text-primary" : "text-muted-foreground opacity-0 group-hover:opacity-100"}`} />
+              <ArrowRight
+                className={`h-4 w-4 transition ${active ? "text-primary" : "text-muted-foreground opacity-0 group-hover:opacity-100"}`}
+              />
             </button>
           );
         })}
@@ -373,7 +387,9 @@ function Field({
 }) {
   return (
     <div>
-      <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
+      <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Label>
       <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -390,12 +406,17 @@ function NoteRow({ note }: { note: Note }) {
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs text-muted-foreground">
-          {date.toLocaleDateString()} · {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {date.toLocaleDateString()} ·{" "}
+          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
-        <Badge variant="secondary" className="text-xs">Saved</Badge>
+        <Badge variant="secondary" className="text-xs">
+          Saved
+        </Badge>
       </div>
       <div className="grid gap-2 text-sm md:grid-cols-2">
-        {note.structured.patientConcern && <Bit label="Concern" value={note.structured.patientConcern} />}
+        {note.structured.patientConcern && (
+          <Bit label="Concern" value={note.structured.patientConcern} />
+        )}
         {note.structured.careProvided && <Bit label="Care" value={note.structured.careProvided} />}
         {note.structured.status && <Bit label="Status" value={note.structured.status} />}
         {note.structured.followUp && <Bit label="Follow-up" value={note.structured.followUp} />}
@@ -407,7 +428,9 @@ function NoteRow({ note }: { note: Note }) {
 function Bit({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
       <div className="text-sm leading-snug">{value}</div>
     </div>
   );
@@ -433,7 +456,10 @@ function AddPatientDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <Card className="w-full max-w-md p-6 shadow-clinical" onClick={(e) => e.stopPropagation()}>
         <h2 className="mb-4 font-display text-xl font-semibold">Add patient</h2>
         <form onSubmit={submit} className="space-y-3">
@@ -444,7 +470,13 @@ function AddPatientDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="a">Age</Label>
-              <Input id="a" type="number" required value={age} onChange={(e) => setAge(e.target.value)} />
+              <Input
+                id="a"
+                type="number"
+                required
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="r">Room</Label>
@@ -456,7 +488,9 @@ function AddPatientDialog({
             <Input id="c" value={condition} onChange={(e) => setCondition(e.target.value)} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
             <Button type="submit">Add patient</Button>
           </div>
         </form>

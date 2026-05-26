@@ -45,9 +45,15 @@ function Landing() {
           <span className="font-display text-xl font-semibold">CareSync AI</span>
         </div>
         <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-          <a href="#features" className="hover:text-foreground">Features</a>
-          <a href="#security" className="hover:text-foreground">Security</a>
-          <a href="#how" className="hover:text-foreground">How it works</a>
+          <a href="#features" className="hover:text-foreground">
+            Features
+          </a>
+          <a href="#security" className="hover:text-foreground">
+            Security
+          </a>
+          <a href="#how" className="hover:text-foreground">
+            How it works
+          </a>
         </nav>
       </header>
 
@@ -61,8 +67,8 @@ function Landing() {
             <span className="block text-primary">care for caregivers.</span>
           </h1>
           <p className="mt-5 max-w-lg text-lg text-muted-foreground">
-            CareSync AI lets CNAs, caregivers, and family providers record patient care
-            notes by voice — automatically transcribed, structured, and stored securely.
+            CareSync AI lets CNAs, caregivers, and family providers record patient care notes by
+            voice — automatically transcribed, structured, and stored securely.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link to="/dashboard">
@@ -71,13 +77,21 @@ function Landing() {
               </Button>
             </Link>
             <a href="#features">
-              <Button size="lg" variant="outline">See features</Button>
+              <Button size="lg" variant="outline">
+                See features
+              </Button>
             </a>
           </div>
           <div className="mt-8 flex items-center gap-5 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> MFA protected</span>
-            <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> KMS encrypted</span>
-            <span className="inline-flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Audit logged</span>
+            <span className="inline-flex items-center gap-1.5">
+              <Lock className="h-3.5 w-3.5" /> MFA protected
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" /> KMS encrypted
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5" /> Audit logged
+            </span>
           </div>
         </div>
 
@@ -85,7 +99,9 @@ function Landing() {
           <div className="mb-4">
             <h2 className="font-display text-2xl font-semibold">Sign in</h2>
             <p className="text-sm text-muted-foreground">
-              {step === "creds" ? "Demo login — no real account needed." : "Enter the 6-digit MFA code (any digits work)."}
+              {step === "creds"
+                ? "Demo login — no real account needed."
+                : "Enter the 6-digit MFA code (any digits work)."}
             </p>
           </div>
           <form className="space-y-4" onSubmit={submit}>
@@ -93,22 +109,51 @@ function Landing() {
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="caregiver@example.com" />
+                  <Input
+                    id="email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="caregiver@example.com"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+                  <Input
+                    id="password"
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
                 </div>
-                <Button type="submit" className="w-full">Continue</Button>
+                <Button type="submit" className="w-full">
+                  Continue
+                </Button>
               </>
             ) : (
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="mfa">MFA code</Label>
-                  <Input id="mfa" inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="123456" />
+                  <Input
+                    id="mfa"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="123456"
+                  />
                 </div>
-                <Button type="submit" className="w-full">Verify & enter</Button>
-                <button type="button" onClick={() => setStep("creds")} className="w-full text-xs text-muted-foreground hover:text-foreground">
+                <Button type="submit" className="w-full">
+                  Verify & enter
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setStep("creds")}
+                  className="w-full text-xs text-muted-foreground hover:text-foreground"
+                >
                   Back
                 </button>
               </>
@@ -119,14 +164,30 @@ function Landing() {
 
       <section id="features" className="mx-auto max-w-6xl px-6 py-16">
         <div className="mb-10 max-w-2xl">
-          <h2 className="font-display text-3xl font-semibold md:text-4xl">A documentation workflow that disappears.</h2>
-          <p className="mt-3 text-muted-foreground">From mic to medical record in under a minute.</p>
+          <h2 className="font-display text-3xl font-semibold md:text-4xl">
+            A documentation workflow that disappears.
+          </h2>
+          <p className="mt-3 text-muted-foreground">
+            From mic to medical record in under a minute.
+          </p>
         </div>
         <div className="grid gap-5 md:grid-cols-3">
           {[
-            { icon: Mic, title: "Live voice capture", body: "Press record and dictate naturally. Live transcription appears as you speak." },
-            { icon: Sparkles, title: "Auto-structured notes", body: "Concern, care provided, status, follow-up — categorized automatically." },
-            { icon: ShieldCheck, title: "Secure by design", body: "Built around Cognito MFA, KMS encryption, and CloudTrail audit logs." },
+            {
+              icon: Mic,
+              title: "Live voice capture",
+              body: "Press record and dictate naturally. Live transcription appears as you speak.",
+            },
+            {
+              icon: Sparkles,
+              title: "Auto-structured notes",
+              body: "Concern, care provided, status, follow-up — categorized automatically.",
+            },
+            {
+              icon: ShieldCheck,
+              title: "Secure by design",
+              body: "Built around Cognito MFA, KMS encryption, and CloudTrail audit logs.",
+            },
           ].map(({ icon: Icon, title, body }) => (
             <Card key={title} className="p-6">
               <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
@@ -159,10 +220,12 @@ function Landing() {
       <section id="security" className="mx-auto max-w-6xl px-6 py-16">
         <div className="grid gap-10 md:grid-cols-2 md:items-center">
           <div>
-            <h2 className="font-display text-3xl font-semibold md:text-4xl">Healthcare-grade security.</h2>
+            <h2 className="font-display text-3xl font-semibold md:text-4xl">
+              Healthcare-grade security.
+            </h2>
             <p className="mt-3 text-muted-foreground">
-              CareSync AI is designed around the practices healthcare workflows demand —
-              identity, encryption, isolation, and accountability.
+              CareSync AI is designed around the practices healthcare workflows demand — identity,
+              encryption, isolation, and accountability.
             </p>
           </div>
           <ul className="space-y-3">

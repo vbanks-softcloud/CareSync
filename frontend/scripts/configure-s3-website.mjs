@@ -137,4 +137,6 @@ console.log(`Website URL: ${websiteUrl}`);
 console.log("=================================================\n");
 console.log("Next:");
 console.log("  npm run build:frontend");
-console.log(`  CARESYNC_FRONTEND_BUCKET=${BUCKET} AWS_REGION=${REGION} npm run deploy --workspace=@caresync/frontend`);
+console.log(
+  `  CARESYNC_FRONTEND_BUCKET=${BUCKET} AWS_REGION=${REGION} npm run deploy --workspace=@caresync/frontend`,
+);
