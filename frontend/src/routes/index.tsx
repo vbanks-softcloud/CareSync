@@ -42,7 +42,7 @@ function Landing() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-clinical">
             <Stethoscope className="h-5 w-5" />
           </div>
-          <span className="font-display text-xl font-semibold">CareSync AI</span>
+          <span className="font-display text-xl font-semibold">CareSync</span>
         </div>
         <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
           <a href="#features" className="hover:text-foreground">
@@ -67,7 +67,7 @@ function Landing() {
             <span className="block text-primary">care for caregivers.</span>
           </h1>
           <p className="mt-5 max-w-lg text-lg text-muted-foreground">
-            CareSync AI lets CNAs, caregivers, and family providers record patient care notes by
+            CareSync lets CNAs, caregivers, and family providers record patient care notes by
             voice — automatically transcribed, structured, and stored securely.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
@@ -224,7 +224,7 @@ function Landing() {
               Healthcare-grade security.
             </h2>
             <p className="mt-3 text-muted-foreground">
-              CareSync AI is designed around the practices healthcare workflows demand — identity,
+              CareSync is designed around the practices healthcare workflows demand — identity,
               encryption, isolation, and accountability.
             </p>
           </div>
@@ -247,7 +247,7 @@ function Landing() {
 
       <footer className="border-t">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-6 py-6 text-xs text-muted-foreground md:flex-row">
-          <span>© {new Date().getFullYear()} CareSync AI — Demo prototype</span>
+          <span>© {new Date().getFullYear()} CareSync — Demo prototype</span>
           <span>Built by Jose, Ernest, Vince, Shauna, AT & Dawit</span>
         </div>
       </footer>

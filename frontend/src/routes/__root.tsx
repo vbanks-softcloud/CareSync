@@ -67,7 +67,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
-      { title: "CareSync AI — Voice notes for caregivers" },
+      { title: "CareSync — Voice notes for caregivers" },
       {
         name: "description",
         content:

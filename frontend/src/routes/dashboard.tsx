@@ -41,7 +41,7 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
   head: () => ({
     meta: [
-      { title: "Dashboard — CareSync AI" },
+      { title: "Dashboard — CareSync" },
       { name: "description", content: "Record, structure, and save patient care notes." },
     ],
   }),
@@ -134,7 +134,7 @@ function Dashboard() {
               <Stethoscope className="h-5 w-5" />
             </div>
             <div>
-              <div className="font-display font-semibold leading-tight">CareSync AI</div>
+              <div className="font-display font-semibold leading-tight">CareSync</div>
               <div className="text-xs text-muted-foreground">{auth.email}</div>
             </div>
           </div>
