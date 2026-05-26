@@ -7,20 +7,38 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+.pnp
+.pnp.js
+
+# Builds
 dist
 dist-ssr
+build
 .output
 .vinxi
-.tanstack/**
 .nitro
-*.local
+.tanstack/**
+.vite/
 
-# Wrangler / Cloudflare
+# Wrangler / Cloudflare (legacy, kept until S3 migration completes)
 .wrangler/
 .dev.vars
 
-# Editor directories and files
+# Serverless Framework / AWS
+.serverless/
+.sam/
+.aws-sam/
+cdk.out/
+
+# Env files
+.env
+.env.local
+.env.*.local
+*.local
+
+# Editor / OS
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -30,3 +48,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test / coverage
+coverage/
+.nyc_output/
