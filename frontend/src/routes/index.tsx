@@ -67,7 +67,7 @@ function Landing() {
           <div className="mt-7 flex flex-wrap gap-3">
             <Link to="/dashboard">
               <Button size="lg" className="gap-2">
-                <Mic className="h-4 w-4" /> Try the demo
+                <Mic className="h-4 w-4" /> Try the live demo
               </Button>
             </Link>
             <a href="#features">
