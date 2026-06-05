@@ -1,0 +1,24 @@
+# CareSync CODEOWNERS
+# Each line is a file pattern followed by one or more owners.
+# Order matters: the LAST matching pattern wins.
+# See: https://docs.github.com/articles/about-codeowners
+
+# Default owners for everything in the repo (catch-all)
+* @vbanks-softcloud
+
+# Frontend
+/frontend/                @vbanks-softcloud
+
+# Backend (Lambda services)
+/backend/                 @vbanks-softcloud
+
+# Infrastructure / IaC
+/infrastructure/          @vbanks-softcloud
+/database/                @vbanks-softcloud
+
+# CI/CD
+/.github/                 @vbanks-softcloud
+/ci-cd/                   @vbanks-softcloud
+
+# Docs
+/docs/                    @vbanks-softcloud

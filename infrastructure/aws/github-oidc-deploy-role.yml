@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  IAM role that GitHub Actions can assume via OIDC to deploy the CareSync
+  frontend (sync to S3, invalidate CloudFront). Deploy this once per AWS
+  account; reuse it from the frontend-deploy workflow.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or user that owns the repo (e.g. vbanks-softcloud).
+
+  GitHubRepo:
+    Type: String
+    Default: CareSync
+    Description: Repository name.
+
+  AllowedRefs:
+    Type: String
+    Default: "ref:refs/heads/main"
+    Description: >
+      Subject claim suffix(es) allowed to assume this role, comma-separated.
+      Examples:
+        ref:refs/heads/main
+        ref:refs/heads/main,ref:refs/heads/develop
+        environment:production
+
+  FrontendBucketName:
+    Type: String
+    Description: S3 bucket that the role is allowed to write to.
+
+  CloudFrontDistributionArn:
+    Type: String
+    Description: ARN of the CloudFront distribution that the role can invalidate.
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        # GitHub publishes thumbprints; AWS now validates the cert chain itself
+        # but the field is still required. Both values below are the historical
+        # GitHub root thumbprints.
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-deploy"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !GetAtt GitHubOidcProvider.Arn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": sts.amazonaws.com
+              StringLike:
+                "token.actions.githubusercontent.com:sub":
+                  !Split
+                    - ","
+                    - !Sub "repo:${GitHubOrg}/${GitHubRepo}:${AllowedRefs}"
+      Policies:
+        - PolicyName: frontend-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3Sync
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${FrontendBucketName}"
+              - Sid: S3Objects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${FrontendBucketName}/*"
+              - Sid: CloudFrontInvalidate
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                  - cloudfront:ListInvalidations
+                Resource: !Ref CloudFrontDistributionArn
+
+Outputs:
+  RoleArn:
+    Description: Role ARN to put in the GitHub Actions workflow.
+    Value: !GetAtt DeployRole.Arn
