@@ -67,8 +67,8 @@ function Landing() {
             <span className="block text-primary">care for caregivers.</span>
           </h1>
           <p className="mt-5 max-w-lg text-lg text-muted-foreground">
-            CareSync lets CNAs, caregivers, and family providers record patient care notes by voice
-            — automatically transcribed, structured, and stored securely.
+            CareSync lets CNAs, caregivers, and family providers record patient care notes by
+            voice — automatically transcribed, structured, and stored securely.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link to="/dashboard">
