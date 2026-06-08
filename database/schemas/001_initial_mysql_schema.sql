@@ -36,6 +36,8 @@ CREATE TABLE care_notes (
   INDEX idx_care_notes_patient_created (patient_id, created_at)
 );
 
+# Audit Table 
+
 CREATE TABLE audit_logs (
   id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
   user_id CHAR(36),
