@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CareSync — pom.xml
+
+  IMPORTANT: This project is a Node/TypeScript monorepo. The real build is driven
+  by `package.json` and `npm` (see scripts there). This `pom.xml` exists only so
+  the repo can be opened by Maven-aware tools (CI scanners, IDEs, classroom
+  grading scripts, etc.).
+
+  Running `mvn package` will:
+    1. Install Node and npm into a local cache (via frontend-maven-plugin).
+    2. Run `npm ci` to install dependencies.
+    3. Run `npm run build` to produce `frontend/dist/`.
+
+  You do NOT need Maven to develop or deploy this project. The day-to-day
+  workflow is still:
+    npm install
+    npm run dev:frontend
+    npm run build
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.caresync</groupId>
+  <artifactId>caresync</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+
+  <name>CareSync</name>
+  <description>
+    CareSync monorepo: TanStack frontend (S3 + CloudFront) and AWS Lambda backend
+    (Serverless Framework). Built with npm; this pom.xml is a wrapper.
+  </description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <node.version>v20.19.0</node.version>
+    <npm.version>10.8.2</npm.version>
+    <frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.github.eirslett</groupId>
+        <artifactId>frontend-maven-plugin</artifactId>
+        <version>${frontend-maven-plugin.version}</version>
+
+        <configuration>
+          <nodeVersion>${node.version}</nodeVersion>
+          <npmVersion>${npm.version}</npmVersion>
+        </configuration>
+
+        <executions>
+          <execution>
+            <id>install-node-and-npm</id>
+            <goals><goal>install-node-and-npm</goal></goals>
+            <phase>initialize</phase>
+          </execution>
+
+          <execution>
+            <id>npm-install</id>
+            <goals><goal>npm</goal></goals>
+            <phase>generate-resources</phase>
+            <configuration>
+              <arguments>ci</arguments>
+            </configuration>
+          </execution>
+
+          <execution>
+            <id>npm-build</id>
+            <goals><goal>npm</goal></goals>
+            <phase>compile</phase>
+            <configuration>
+              <arguments>run build</arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

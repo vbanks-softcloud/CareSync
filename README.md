@@ -4,7 +4,7 @@ CareSync is a clinical voice-notes web app: caregivers press a button, dictate a
 
 This guide gets a brand-new teammate from a fresh laptop all the way to "the app is running on my machine" — even if you've never opened a terminal before. If you get stuck on any step, ask the team (or jump to [Troubleshooting](#troubleshooting) at the bottom).
 
-**The live demo:** <https://d3d2fj30gh2tf0.cloudfront.net/>
+**The live demo:** <https://caresync.fyi/>
 
 ---
 
@@ -303,6 +303,58 @@ The frontend is a pure static SPA. `npm run build:frontend` produces a `frontend
    CARESYNC_CF_DISTRIBUTION_ID=<DIST_ID> \
    npm run deploy
    ```
+
+### Authentication (Amazon Cognito)
+
+CareSync uses **AWS Cognito** for sign-up, sign-in, and required TOTP MFA (authenticator app). All free under Cognito's free tier (50,000 monthly active users / month).
+
+Until you deploy the Cognito stack, the app falls back to a local-mock login (any email + password + 4+ digit "MFA" code). So `npm run dev:frontend` works out of the box; real Cognito only activates once you set the env vars.
+
+1. **Deploy the Cognito User Pool** (one-time):
+
+   ```bash
+   aws cloudformation deploy \
+     --stack-name caresync-cognito-prod \
+     --template-file infrastructure/aws/cognito.yml \
+     --region ca-central-1 \
+     --parameter-overrides AppName=caresync Environment=prod
+   ```
+
+2. **Read the outputs** — you need three values:
+
+   ```bash
+   aws cloudformation describe-stacks \
+     --stack-name caresync-cognito-prod \
+     --region ca-central-1 \
+     --query 'Stacks[0].Outputs' \
+     --output table
+   ```
+
+   Look for `UserPoolId`, `UserPoolClientId`, and `Region`.
+
+3. **Local development** — copy `frontend/.env.example` to `frontend/.env.local` and paste those three values:
+
+   ```env
+   VITE_COGNITO_USER_POOL_ID=ca-central-1_aBcD1234
+   VITE_COGNITO_USER_POOL_CLIENT_ID=7abc...xyz
+   VITE_COGNITO_REGION=ca-central-1
+   ```
+
+   Restart `npm run dev:frontend` — the landing page now shows a real Sign in / Sign up tabbed form and the dashboard requires a real Cognito session.
+
+4. **Production deploys** — add the same three values as GitHub Actions secrets so the build picks them up:
+
+   | Secret                             | Value (from step 2)        |
+   | ---------------------------------- | -------------------------- |
+   | `VITE_COGNITO_USER_POOL_ID`        | `UserPoolId` output        |
+   | `VITE_COGNITO_USER_POOL_CLIENT_ID` | `UserPoolClientId` output  |
+   | `VITE_COGNITO_REGION`              | `ca-central-1`             |
+
+   Push to `main` and the deploy workflow injects them into the Vite build.
+
+5. **Create your first user** — open the live site (or local), click **Sign up**, enter your email + a strong password (10+ chars, upper + lower + number), check your inbox for the 6-digit confirmation code, then sign in. On the first sign-in Cognito asks you to add CareSync to an authenticator app (Google Authenticator, Authy, 1Password — anything that does TOTP); after that, every sign-in needs a 6-digit code from the app.
+
+> **Note**: `frontend/.env.local` should never be committed. It's already covered by the default `.gitignore` (`.env*` patterns).
 
 ---
 

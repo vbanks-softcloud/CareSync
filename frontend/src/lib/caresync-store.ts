@@ -74,14 +74,40 @@ export function saveNote(note: Omit<Note, "id" | "createdAt">): Note {
   return newNote;
 }
 
-export function getAuth(): { email: string } | null {
-  return read<{ email: string } | null>(AUTH_KEY, null);
+/* ---------------- auth ---------------- */
+//
+// Two paths:
+//   * Cognito mode (VITE_COGNITO_* env vars present): real AWS Cognito User Pool.
+//   * Mock mode (env vars missing): a localStorage-backed stub so `npm run dev`
+//     keeps working before the Cognito stack is deployed.
+//
+// `getCurrentUser` and `signOut` are async so they work for both paths.
+
+import * as cognito from "./cognito";
+
+export type AuthUser = { email: string };
+
+export const isCognitoConfigured = cognito.isCognitoConfigured;
+
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  if (isCognitoConfigured) return cognito.getCurrentUser();
+  return read<AuthUser | null>(AUTH_KEY, null);
 }
-export function signIn(email: string) {
-  write(AUTH_KEY, { email });
-}
-export function signOut() {
+
+export async function signOut(): Promise<void> {
+  if (isCognitoConfigured) {
+    try {
+      await cognito.signOut();
+    } catch {
+      // Ignore — happens when there's no active Cognito session.
+    }
+  }
   if (typeof window !== "undefined") localStorage.removeItem(AUTH_KEY);
+}
+
+/** Mock-only sign-in. Used by the landing page when Cognito is NOT configured. */
+export function mockSignIn(email: string) {
+  write(AUTH_KEY, { email });
 }
 
 // Naive keyword categorizer to mock the AI/Lambda step

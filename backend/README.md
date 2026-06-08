@@ -1,6 +1,6 @@
 # Backend
 
-AWS Lambda functions for CareSync AI, managed with the [Serverless Framework](https://www.serverless.com/).
+AWS Lambda functions for CareSync, managed with the [Serverless Framework](https://www.serverless.com/).
 
 ## Services planned
 

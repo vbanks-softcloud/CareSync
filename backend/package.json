@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "CareSync AI backend: AWS Lambda functions managed by Serverless Framework.",
+  "description": "CareSync backend: AWS Lambda functions managed by Serverless Framework.",
   "main": "src/handlers/health.ts",
   "scripts": {
     "dev": "serverless offline start",
