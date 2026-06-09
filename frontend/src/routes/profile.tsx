@@ -4,37 +4,37 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, Loader2, Stethoscope, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Stethoscope, AlertTriangle } from "lucide-react";
 import {
   type AuthUser,
   type Occupation,
+  type UserProfile,
   OCCUPATIONS,
   OCCUPATION_LABELS,
   MIN_ALLOWED_BIRTHDATE,
   getCurrentUser,
-  isProfileComplete,
+  getCachedUserProfile,
+  getUserProfile,
   isValidBirthdate,
   maxAllowedBirthdate,
   saveUserProfile,
 } from "@/lib/caresync-store";
 
-export const Route = createFileRoute("/onboarding")({
-  component: Onboarding,
+export const Route = createFileRoute("/profile")({
+  component: ProfileEdit,
   head: () => ({
     meta: [
-      { title: "Set up your account — CareSync" },
-      {
-        name: "description",
-        content: "Tell us a bit about yourself so we can personalize CareSync.",
-      },
+      { title: "Your profile — CareSync" },
+      { name: "description", content: "Update your name, date of birth, and role." },
     ],
   }),
 });
 
-function Onboarding() {
+function ProfileEdit() {
   const navigate = useNavigate();
   const [auth, setAuth] = useState<AuthUser | null>(null);
-  const [checking, setChecking] = useState(true);
+  const [original, setOriginal] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -42,11 +42,11 @@ function Onboarding() {
   const [occupation, setOccupation] = useState<Occupation | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const maxDob = maxAllowedBirthdate();
 
-  // Auth + already-onboarded gate. Bounces back to landing if not signed in,
-  // and skips this whole screen if the user has already completed it.
+  // Load existing profile (cache-first for instant paint, then Cognito).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -56,23 +56,45 @@ function Onboarding() {
         navigate({ to: "/" });
         return;
       }
-      const complete = await isProfileComplete(u.email);
+      setAuth(u);
+
+      const cached = getCachedUserProfile(u.email);
+      if (cached) hydrate(cached);
+
+      const fresh = await getUserProfile(u.email);
       if (cancelled) return;
-      if (complete) {
-        navigate({ to: "/dashboard" });
+      if (!fresh) {
+        // User landed here without ever completing onboarding — send them
+        // through the proper flow instead of letting them save an empty form.
+        navigate({ to: "/onboarding" });
         return;
       }
-      setAuth(u);
-      setChecking(false);
+      hydrate(fresh);
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
+    function hydrate(p: UserProfile) {
+      setOriginal(p);
+      setFirstName(p.firstName);
+      setLastName(p.lastName);
+      setBirthdate(p.birthdate);
+      setOccupation(p.occupation);
+    }
   }, [navigate]);
+
+  const dirty =
+    !!original &&
+    (firstName.trim() !== original.firstName ||
+      lastName.trim() !== original.lastName ||
+      birthdate !== original.birthdate ||
+      occupation !== original.occupation);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSaved(false);
 
     if (!firstName.trim() || !lastName.trim()) {
       setError("Please enter both your first and last name.");
@@ -90,24 +112,32 @@ function Onboarding() {
 
     setBusy(true);
     try {
-      await saveUserProfile(auth.email, {
+      const next = await saveUserProfile(auth.email, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         birthdate,
         occupation,
       });
-      navigate({ to: "/dashboard" });
+      setOriginal(next);
+      setSaved(true);
+      // Soft-flash the success state, then leave it — staying on the page
+      // lets the user keep editing without bouncing around.
+      setTimeout(() => setSaved(false), 2200);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Couldn't save your profile. Check your connection and try again.";
       setError(msg);
+    } finally {
       setBusy(false);
     }
   };
 
-  if (checking) {
+  if (loading) {
     return (
       <div className="bg-hero flex min-h-screen items-center justify-center">
-        <Loader2 className="text-primary h-8 w-8 animate-spin" aria-label="Loading" />
+        <Loader2 className="text-primary h-8 w-8 animate-spin" aria-label="Loading profile" />
       </div>
     );
   }
@@ -115,19 +145,28 @@ function Onboarding() {
   return (
     <div className="bg-hero min-h-screen px-4 py-12">
       <div className="mx-auto max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-2">
-          <div className="bg-primary text-primary-foreground shadow-clinical flex h-9 w-9 items-center justify-center rounded-xl">
-            <Stethoscope className="h-5 w-5" />
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/dashboard" })}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="bg-primary text-primary-foreground shadow-clinical flex h-9 w-9 items-center justify-center rounded-xl">
+              <Stethoscope className="h-5 w-5" />
+            </div>
+            <span className="font-display text-xl font-semibold">CareSync</span>
           </div>
-          <span className="font-display text-xl font-semibold">CareSync</span>
         </div>
 
         <Card className="shadow-clinical p-6">
           <div className="mb-5">
-            <h1 className="font-display text-2xl font-semibold">Welcome to CareSync</h1>
+            <h1 className="font-display text-2xl font-semibold">Your profile</h1>
             <p className="text-muted-foreground text-sm">
-              Tell us a bit about yourself. This personalizes your dashboard and helps us tailor
-              prompts to your role.
+              Update the details we use to personalize your dashboard.
             </p>
           </div>
 
@@ -135,6 +174,13 @@ function Onboarding() {
             <div className="border-destructive/30 bg-destructive/5 text-destructive mb-4 flex items-start gap-2 rounded-md border p-2 text-xs">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
               <span>{error}</span>
+            </div>
+          )}
+
+          {saved && !error && (
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+              <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>Profile saved.</span>
             </div>
           )}
 
@@ -148,7 +194,6 @@ function Onboarding() {
                   onChange={(e) => setFirstName(e.target.value)}
                   autoComplete="given-name"
                   required
-                  placeholder="Jane"
                 />
               </div>
               <div className="space-y-1.5">
@@ -159,7 +204,6 @@ function Onboarding() {
                   onChange={(e) => setLastName(e.target.value)}
                   autoComplete="family-name"
                   required
-                  placeholder="Doe"
                 />
               </div>
             </div>
@@ -197,14 +241,20 @@ function Onboarding() {
               </select>
             </div>
 
-            <Button type="submit" className="w-full gap-2" disabled={busy}>
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              )}
-              Continue to dashboard
-            </Button>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate({ to: "/dashboard" })}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy || !dirty} className="gap-2">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                {dirty ? "Save changes" : "Saved"}
+              </Button>
+            </div>
           </form>
         </Card>
 

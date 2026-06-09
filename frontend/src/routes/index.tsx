@@ -43,7 +43,9 @@ function Landing() {
       if (cancelled || !u) return;
       // Skip the dashboard's own gate; route directly so signed-in users
       // without a profile go straight to onboarding without a flash.
-      navigate({ to: isProfileComplete(u.email) ? "/dashboard" : "/onboarding" });
+      const complete = await isProfileComplete(u.email);
+      if (cancelled) return;
+      navigate({ to: complete ? "/dashboard" : "/onboarding" });
     })();
     return () => {
       cancelled = true;

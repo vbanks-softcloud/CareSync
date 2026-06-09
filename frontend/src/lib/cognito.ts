@@ -20,6 +20,7 @@ import {
   signOut as amplifySignOut,
   getCurrentUser as amplifyGetCurrentUser,
   fetchUserAttributes as amplifyFetchUserAttributes,
+  updateUserAttributes as amplifyUpdateUserAttributes,
   resetPassword as amplifyResetPassword,
   confirmResetPassword as amplifyConfirmResetPassword,
 } from "aws-amplify/auth";
@@ -140,6 +141,57 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   } catch {
     return null;
   }
+}
+
+/* ---------------- user profile ---------------- */
+//
+// First name + last name use the standard Cognito attributes given_name and
+// family_name. Birthdate uses the standard `birthdate` attribute (ISO format
+// YYYY-MM-DD, always available — no schema change). Occupation is stored as
+// `custom:occupation`, declared once via the AWS console.
+
+export type CognitoProfile = {
+  firstName: string;
+  lastName: string;
+  /** ISO YYYY-MM-DD. */
+  birthdate: string;
+  occupation: string;
+};
+
+/** Returns the signed-in user's profile from Cognito, or null if any of the
+ * required fields aren't set yet. Callers should treat null as "not
+ * onboarded" and route the user through the onboarding flow.
+ *
+ * Throws nothing; on network or auth failure it just returns null and lets
+ * callers fall back to a cached value. */
+export async function fetchProfile(): Promise<CognitoProfile | null> {
+  if (!isCognitoConfigured) return null;
+  try {
+    const attrs = await amplifyFetchUserAttributes();
+    const firstName = attrs.given_name?.trim();
+    const lastName = attrs.family_name?.trim();
+    const birthdate = attrs.birthdate?.trim();
+    const occupation = attrs["custom:occupation"];
+    if (!firstName || !lastName || !birthdate || !occupation) return null;
+    return { firstName, lastName, birthdate, occupation };
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the given profile to Cognito as a single UpdateUserAttributes call.
+ * Throws on failure so callers can show an error and keep the user on the
+ * onboarding / edit screen. */
+export async function updateProfile(profile: CognitoProfile): Promise<void> {
+  requireConfigured();
+  await amplifyUpdateUserAttributes({
+    userAttributes: {
+      given_name: profile.firstName,
+      family_name: profile.lastName,
+      birthdate: profile.birthdate,
+      "custom:occupation": profile.occupation,
+    },
+  });
 }
 
 /* ---------------- internals ---------------- */

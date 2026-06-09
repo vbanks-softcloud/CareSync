@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,8 +39,8 @@ import {
   saveNote,
   structureTranscript,
   getCurrentUser,
+  getCachedUserProfile,
   getUserProfile,
-  isProfileComplete,
   signOut,
 } from "@/lib/caresync-store";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -63,8 +63,8 @@ function Dashboard() {
   const [structured, setStructured] = useState<StructuredNote>({
     patientConcern: "",
     careProvided: "",
-    status: "",
-    followUp: "",
+    patientStatus: "",
+    followUpNeeded: "",
   });
   const [editableTranscript, setEditableTranscript] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -84,14 +84,28 @@ function Dashboard() {
         navigate({ to: "/" });
         return;
       }
-      // First-run onboarding gate: new users must fill in name/age/role
-      // before they can see the dashboard.
-      if (!isProfileComplete(a.email)) {
+      // Optimistic render: paint the header with whatever the local cache
+      // last knew so the screen doesn't flash with a raw email while we
+      // round-trip to Cognito for the real attributes.
+      const cached = getCachedUserProfile(a.email);
+      if (cached) {
+        setAuth(a);
+        setProfile(cached);
+      }
+      // First-run onboarding gate: new users (and returning users we've
+      // never seen on this device) get bounced to /onboarding until the
+      // profile in Cognito is complete.
+      const fresh = await getUserProfile(a.email);
+      if (cancelled) return;
+      const complete = Boolean(
+        fresh && fresh.firstName.trim() && fresh.lastName.trim() && fresh.birthdate,
+      );
+      if (!complete) {
         navigate({ to: "/onboarding" });
         return;
       }
       setAuth(a);
-      setProfile(getUserProfile(a.email));
+      setProfile(fresh);
       const p = getPatients();
       setPatients(p);
       setSelectedId(p[0]?.id ?? null);
@@ -143,7 +157,7 @@ function Dashboard() {
     });
     setNotes([note, ...notes]);
     setEditableTranscript("");
-    setStructured({ patientConcern: "", careProvided: "", status: "", followUp: "" });
+    setStructured({ patientConcern: "", careProvided: "", patientStatus: "", followUpNeeded: "" });
     speech.reset();
     setTab("history");
     toast.success("Note saved", { description: "Encrypted and added to patient record." });
@@ -231,9 +245,14 @@ function Dashboard() {
           >
             <LogOut className="h-4 w-4" />
           </Button>
-          <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground sm:flex">
+          <Link
+            to="/profile"
+            className="bg-accent text-accent-foreground hover:bg-accent/80 focus-visible:ring-ring flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            aria-label="Edit profile"
+            title="Edit profile"
+          >
             {initials}
-          </div>
+          </Link>
         </div>
       </header>
 
@@ -394,14 +413,14 @@ function Dashboard() {
                       />
                       <Field
                         label="Status"
-                        value={structured.status}
-                        onChange={(v) => setStructured({ ...structured, status: v })}
+                        value={structured.patientStatus}
+                        onChange={(v) => setStructured({ ...structured, patientStatus: v })}
                         placeholder="e.g. Vital signs stable."
                       />
                       <Field
                         label="Follow-up needed"
-                        value={structured.followUp}
-                        onChange={(v) => setStructured({ ...structured, followUp: v })}
+                        value={structured.followUpNeeded}
+                        onChange={(v) => setStructured({ ...structured, followUpNeeded: v })}
                         placeholder="e.g. Monitor pain level next round."
                       />
                     </div>
@@ -509,7 +528,8 @@ function PatientHeader({ patient, noteCount }: { patient: Patient; noteCount: nu
             {patient.name}
           </h1>
           <p className="truncate text-xs text-muted-foreground sm:text-sm">
-            Age {patient.age} · Rm {patient.room ?? "—"} · {patient.condition ?? "General care"}
+            Age {patient.age} · Rm {patient.room ?? "—"} ·{" "}
+            {patient.conditionSummary ?? "General care"}
           </p>
         </div>
       </div>
@@ -582,8 +602,12 @@ function NoteRow({ note }: { note: Note }) {
           <Bit label="Concern" value={note.structured.patientConcern} />
         )}
         {note.structured.careProvided && <Bit label="Care" value={note.structured.careProvided} />}
-        {note.structured.status && <Bit label="Status" value={note.structured.status} />}
-        {note.structured.followUp && <Bit label="Follow-up" value={note.structured.followUp} />}
+        {note.structured.patientStatus && (
+          <Bit label="Status" value={note.structured.patientStatus} />
+        )}
+        {note.structured.followUpNeeded && (
+          <Bit label="Follow-up" value={note.structured.followUpNeeded} />
+        )}
       </div>
     </div>
   );
@@ -615,7 +639,7 @@ function AddPatientDialog({
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !age) return;
-    const p = addPatient({ name, age: Number(age), room, condition });
+    const p = addPatient({ name, age: Number(age), room, conditionSummary: condition });
     onAdded(p);
   };
 
