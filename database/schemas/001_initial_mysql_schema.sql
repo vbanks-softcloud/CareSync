@@ -1,25 +1,15 @@
 CREATE DATABASE IF NOT EXISTS caresync;
 USE caresync;
 
+-- The `users` table is intentionally minimal. Cognito (us-east-1_aIqAshPg1)
+-- is the single source of truth for user identity, email, name, birthdate,
+-- and clinical role (`custom:occupation`). This row only exists so that
+-- patient/note/audit rows have a stable internal foreign key to attach to;
+-- all human-readable details are looked up via `cognito_sub` against the
+-- Cognito IDP when the app actually needs to display them.
 CREATE TABLE users (
   id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-  cognito_sub VARCHAR(128) UNIQUE,
-  email VARCHAR(255) NOT NULL UNIQUE,
-  -- Profile fields captured during onboarding. NULL-allowed because a user
-  -- row may be created (e.g. on first Cognito sign-in) before they finish
-  -- the onboarding form; app-layer validation enforces completeness before
-  -- letting them into the dashboard.
-  first_name VARCHAR(60),
-  last_name VARCHAR(60),
-  birthdate DATE,
-  -- Clinical role the user identifies as. Mirrors the OCCUPATIONS list in
-  -- frontend/src/lib/caresync-store.ts and Cognito's `custom:occupation`
-  -- attribute. Kept as VARCHAR (not ENUM) so adding a new role in the
-  -- frontend doesn't require a schema migration.
-  occupation VARCHAR(40),
-  -- Auth scope, distinct from clinical occupation above. Defaults to
-  -- 'caregiver' for self-signup; 'admin' is granted out-of-band.
-  role ENUM('admin', 'caregiver') DEFAULT 'caregiver',
+  cognito_sub VARCHAR(128) NOT NULL UNIQUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
