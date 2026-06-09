@@ -1,0 +1,57 @@
+service: caresync-backend
+
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 10
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    STAGE: ${self:provider.stage}
+  # iam:
+  #   role:
+  #     statements:
+  #       - Effect: Allow
+  #         Action:
+  #           - dynamodb:GetItem
+  #           - dynamodb:PutItem
+  #         Resource: "*"
+
+plugins:
+  - serverless-esbuild
+  - serverless-offline
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: true
+    target: node20
+    platform: node
+    concurrency: 10
+
+functions:
+  health:
+    handler: src/handlers/health.handler
+    events:
+      - httpApi:
+          path: /health
+          method: get
+
+# Future functions (uncomment and implement when ready):
+#  auth:
+#    handler: src/handlers/auth.handler
+#    events:
+#      - httpApi:
+#          path: /auth/{proxy+}
+#          method: any
+#  notes:
+#    handler: src/handlers/notes.handler
+#    events:
+#      - httpApi:
+#          path: /notes/{proxy+}
+#          method: any

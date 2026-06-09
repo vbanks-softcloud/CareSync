@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CareSync authentication: an Amazon Cognito User Pool with email-based sign-up,
+  required TOTP (authenticator app) MFA, and a public User Pool Client used by
+  the React SPA. Free-tier eligible (50,000 MAUs/month, then $0.0055/MAU).
+
+Parameters:
+  AppName:
+    Type: String
+    Default: caresync
+    Description: >
+      Short app name used as a prefix for Cognito resource names (lowercase,
+      no spaces, max 16 chars to stay under Cognito's 32-char pool-name limit).
+    AllowedPattern: "^[a-z0-9-]{1,16}$"
+    ConstraintDescription: lowercase letters, digits, and hyphens; 1-16 chars.
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Suffix appended to resource names, e.g. caresync-users-prod.
+
+  CallbackUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:8080/,https://caresync.fyi/,https://www.caresync.fyi/"
+    Description: >
+      Comma-separated list of URLs Cognito will redirect to after sign-in if
+      you ever switch to the Hosted UI. The SPA does NOT use this today
+      (we drive sign-in with the Amplify Auth SDK directly), but Cognito
+      requires at least one callback when a client has an OAuth flow enabled.
+
+  LogoutUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:8080/,https://caresync.fyi/,https://www.caresync.fyi/"
+    Description: Comma-separated logout redirect URLs (same reasoning as above).
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub "${AppName}-users-${Environment}"
+      # Self-signup with email-only sign-in. Cognito sends a 6-digit
+      # verification code to the email at sign-up time.
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 10
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      # TOTP (authenticator app) MFA required for every user. Free.
+      # SMS MFA is intentionally NOT enabled (costs money + Canadian sender
+      # ID verification headaches).
+      MfaConfiguration: "ON"
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      # Cognito's default email sender. Free-tier: ~50 emails/day, fine for
+      # the demo. Swap to SES later for production volume.
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      DeletionProtection: ACTIVE
+      UserPoolTags:
+        App: !Ref AppName
+        Env: !Ref Environment
+
+  # Public client used by the React SPA in the browser. No client secret
+  # (SPAs can't keep one secret), short-ish access tokens, refresh tokens
+  # last 30 days.
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AppName}-spa-${Environment}"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      RefreshTokenValidity: 30   # days
+      AccessTokenValidity: 60    # minutes
+      IdTokenValidity: 60        # minutes
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH        # secure remote password (what Amplify uses)
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs: !Ref CallbackUrls
+      LogoutURLs: !Ref LogoutUrls
+      AllowedOAuthFlowsUserPoolClient: false
+      ReadAttributes:
+        - email
+        - email_verified
+      WriteAttributes:
+        - email
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID. Set as VITE_COGNITO_USER_POOL_ID in the SPA.
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+
+  UserPoolClientId:
+    Description: Cognito App Client ID. Set as VITE_COGNITO_USER_POOL_CLIENT_ID in the SPA.
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  UserPoolArn:
+    Description: ARN of the User Pool (useful later when adding API Gateway authorizers).
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolArn"
+
+  Region:
+    Description: AWS region this pool was created in. Set as VITE_COGNITO_REGION in the SPA.
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub "${AWS::StackName}-Region"

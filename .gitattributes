@@ -1,0 +1,21 @@
+# Normalize text files to LF in the repo to keep CI (Linux) Prettier/ESLint
+# happy. Working trees on Windows will still get CRLF if core.autocrlf=true,
+# which combined with prettier's endOfLine=auto avoids the CRLF/LF wars.
+* text=auto eol=lf
+
+# Always-binary blobs.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.svg   text
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.lock  text eol=lf
+*.lockb binary
+
+# Lockfiles can be huge; mark for sane diffing.
+package-lock.json linguist-generated=true

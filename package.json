@@ -1,0 +1,28 @@
+{
+  "name": "caresync-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CareSync monorepo: TanStack frontend (S3 + CloudFront) and AWS Lambda backend (Serverless Framework).",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@caresync/frontend",
+    "dev:frontend": "npm run dev --workspace=@caresync/frontend",
+    "dev:backend": "npm run dev --workspace=@caresync/backend",
+    "build": "npm run build --workspaces --if-present",
+    "build:frontend": "npm run build --workspace=@caresync/frontend",
+    "build:backend": "npm run build --workspace=@caresync/backend",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "deploy:frontend": "npm run deploy --workspace=@caresync/frontend",
+    "deploy:backend": "npm run deploy --workspace=@caresync/backend"
+  },
+  "devDependencies": {
+    "prettier": "^3.7.3"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

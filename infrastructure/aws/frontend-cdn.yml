@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CareSync frontend hosting: a private S3 bucket served via CloudFront using an
+  Origin Access Control (OAC). Includes SPA-style fallback (403/404 -> index.html
+  with 200) so client-side routes resolve correctly.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: >
+      Globally unique S3 bucket name (e.g. caresync-frontend-prod). The bucket is
+      private and only accessible through CloudFront.
+
+  DomainNames:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: >
+      Optional comma-separated list of alternate domain names (CNAMEs) to attach
+      to the CloudFront distribution, e.g. "app.caresync.example.com". Leave
+      empty to use only the default *.cloudfront.net hostname.
+
+  AcmCertificateArn:
+    Type: String
+    Default: ""
+    Description: >
+      ACM certificate ARN in us-east-1 to use with the custom domain(s). Leave
+      empty when DomainNames is empty (the CloudFront default certificate will
+      be used).
+
+  PriceClass:
+    Type: String
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+    Default: PriceClass_100
+    Description: CloudFront edge-location coverage.
+
+Conditions:
+  HasCustomDomains: !Not [!Equals [!Join [",", !Ref DomainNames], ""]]
+  HasAcmCertificate: !Not [!Equals [!Ref AcmCertificateArn, ""]]
+
+Resources:
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "CareSync frontend (${AWS::StackName})"
+        PriceClass: !Ref PriceClass
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        DefaultRootObject: index.html
+        Aliases:
+          !If
+            - HasCustomDomains
+            - !Ref DomainNames
+            - !Ref AWS::NoValue
+        ViewerCertificate:
+          !If
+            - HasAcmCertificate
+            - AcmCertificateArn: !Ref AcmCertificateArn
+              SslSupportMethod: sni-only
+              MinimumProtocolVersion: TLSv1.2_2021
+            - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: s3-frontend
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: s3-frontend
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # CachingOptimized managed policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        # SPA fallback: route every "missing" path through index.html so the
+        # client-side router can render the right page (and 404 component).
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "arn:${AWS::Partition}:s3:::${FrontendBucket}/*"
+            Condition:
+              StringEquals:
+                "AWS:SourceArn": !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+Outputs:
+  BucketName:
+    Description: S3 bucket holding the built SPA artifacts.
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+
+  DistributionId:
+    Description: CloudFront distribution ID (use for cache invalidations).
+    Value: !Ref Distribution
+    Export:
+      Name: !Sub "${AWS::StackName}-DistributionId"
+
+  DistributionDomainName:
+    Description: Default *.cloudfront.net domain.
+    Value: !GetAtt Distribution.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-DistributionDomainName"
