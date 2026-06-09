@@ -21,7 +21,12 @@ import {
   EyeOff,
   Mail,
 } from "lucide-react";
-import { mockSignIn, getCurrentUser, isCognitoConfigured } from "@/lib/caresync-store";
+import {
+  mockSignIn,
+  getCurrentUser,
+  isCognitoConfigured,
+  isProfileComplete,
+} from "@/lib/caresync-store";
 import * as cognito from "@/lib/cognito";
 
 export const Route = createFileRoute("/")({
@@ -35,7 +40,10 @@ function Landing() {
     let cancelled = false;
     (async () => {
       const u = await getCurrentUser();
-      if (!cancelled && u) navigate({ to: "/dashboard" });
+      if (cancelled || !u) return;
+      // Skip the dashboard's own gate; route directly so signed-in users
+      // without a profile go straight to onboarding without a flash.
+      navigate({ to: isProfileComplete(u.email) ? "/dashboard" : "/onboarding" });
     })();
     return () => {
       cancelled = true;

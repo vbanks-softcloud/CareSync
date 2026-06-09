@@ -24,6 +24,7 @@ export type Patient = {
 const PATIENTS_KEY = "caresync.patients.v1";
 const NOTES_KEY = "caresync.notes.v1";
 const AUTH_KEY = "caresync.auth.v1";
+const PROFILE_KEY_PREFIX = "caresync.profile.v1.";
 
 const seedPatients: Patient[] = [
   { id: "p1", name: "Margaret Chen", age: 78, room: "204A", condition: "Post-op recovery" },
@@ -108,6 +109,85 @@ export async function signOut(): Promise<void> {
 /** Mock-only sign-in. Used by the landing page when Cognito is NOT configured. */
 export function mockSignIn(email: string) {
   write(AUTH_KEY, { email });
+}
+
+/* ---------------- user profile ---------------- */
+//
+// First-run onboarding captures who the user actually is (name, age, role).
+// Today the profile is stored in localStorage keyed by email so that two
+// different signed-in users on the same device see their own data. When we
+// add a backend or wire up Cognito custom attributes, swap the read/write
+// helpers below — the rest of the app talks to this module through these
+// function signatures.
+
+export const OCCUPATIONS = [
+  "caregiver",
+  "rn",
+  "lpn",
+  "cna",
+  "doctor",
+  "physical-therapist",
+  "occupational-therapist",
+  "social-worker",
+  "home-health-aide",
+  "family-member",
+  "student",
+  "other",
+] as const;
+
+export type Occupation = (typeof OCCUPATIONS)[number];
+
+export const OCCUPATION_LABELS: Record<Occupation, string> = {
+  caregiver: "Caregiver",
+  rn: "Registered Nurse (RN)",
+  lpn: "Licensed Practical Nurse (LPN)",
+  cna: "Certified Nursing Assistant (CNA)",
+  doctor: "Doctor / Physician",
+  "physical-therapist": "Physical Therapist",
+  "occupational-therapist": "Occupational Therapist",
+  "social-worker": "Social Worker",
+  "home-health-aide": "Home Health Aide",
+  "family-member": "Family Member",
+  student: "Student / Trainee",
+  other: "Other",
+};
+
+export type UserProfile = {
+  firstName: string;
+  lastName: string;
+  age: number;
+  occupation: Occupation;
+  createdAt: number;
+};
+
+function profileKey(email: string): string {
+  return `${PROFILE_KEY_PREFIX}${email.toLowerCase()}`;
+}
+
+export function getUserProfile(email: string): UserProfile | null {
+  if (!email) return null;
+  return read<UserProfile | null>(profileKey(email), null);
+}
+
+export function saveUserProfile(
+  email: string,
+  profile: Omit<UserProfile, "createdAt">,
+): UserProfile {
+  const full: UserProfile = { ...profile, createdAt: Date.now() };
+  write(profileKey(email), full);
+  return full;
+}
+
+export function isProfileComplete(email: string): boolean {
+  const p = getUserProfile(email);
+  return Boolean(
+    p &&
+      p.firstName.trim() &&
+      p.lastName.trim() &&
+      Number.isFinite(p.age) &&
+      p.age > 0 &&
+      OCCUPATIONS.includes(p.occupation),
+  );
 }
 
 // Naive keyword categorizer to mock the AI/Lambda step

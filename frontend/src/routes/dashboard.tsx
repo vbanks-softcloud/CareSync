@@ -32,12 +32,15 @@ import {
   type Note,
   type StructuredNote,
   type AuthUser,
+  type UserProfile,
   getPatients,
   addPatient,
   getNotes,
   saveNote,
   structureTranscript,
   getCurrentUser,
+  getUserProfile,
+  isProfileComplete,
   signOut,
 } from "@/lib/caresync-store";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -67,6 +70,7 @@ function Dashboard() {
   const [showAdd, setShowAdd] = useState(false);
   const [patientSheetOpen, setPatientSheetOpen] = useState(false);
   const [auth, setAuth] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [tab, setTab] = useState("record");
 
   const speech = useSpeechRecognition();
@@ -80,7 +84,14 @@ function Dashboard() {
         navigate({ to: "/" });
         return;
       }
+      // First-run onboarding gate: new users must fill in name/age/role
+      // before they can see the dashboard.
+      if (!isProfileComplete(a.email)) {
+        navigate({ to: "/onboarding" });
+        return;
+      }
       setAuth(a);
+      setProfile(getUserProfile(a.email));
       const p = getPatients();
       setPatients(p);
       setSelectedId(p[0]?.id ?? null);
@@ -150,7 +161,15 @@ function Dashboard() {
 
   if (!auth) return null;
 
-  const initials = auth.email.slice(0, 2).toUpperCase();
+  // Prefer the user's actual name once onboarding is done; fall back to email
+  // characters so the avatar always has something readable.
+  const displayName = profile
+    ? `${profile.firstName} ${profile.lastName}`.trim()
+    : auth.email;
+  const initials = profile
+    ? `${profile.firstName[0] ?? ""}${profile.lastName[0] ?? ""}`.toUpperCase() ||
+      auth.email.slice(0, 2).toUpperCase()
+    : auth.email.slice(0, 2).toUpperCase();
 
   return (
     <div className="min-h-screen bg-background pb-24 lg:pb-0">
@@ -167,7 +186,7 @@ function Dashboard() {
               CareSync
             </div>
             <div className="truncate text-[11px] text-muted-foreground sm:text-xs">
-              {auth.email}
+              {displayName}
             </div>
           </div>
 
