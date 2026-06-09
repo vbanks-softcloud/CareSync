@@ -15,6 +15,7 @@ import {
   Loader2,
   AlertTriangle,
   Check,
+  CheckCircle2,
   Circle,
   Eye,
   EyeOff,
@@ -224,6 +225,10 @@ function SignInForm({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // Drives the full-card overlay shown while the email-verification code is
+  // being checked, then briefly again as a success indicator before the form
+  // transitions back to the sign-in step.
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "success">("idle");
 
   const reset = () => {
     setCode("");
@@ -257,10 +262,17 @@ function SignInForm({ onDone }: { onDone: () => void }) {
           setCode("");
         }
       } else if (stage.kind === "confirm-signup") {
+        setVerifyStatus("verifying");
         await cognito.confirmSignUp(email, code);
+        setVerifyStatus("success");
+        // Hold the green checkmark long enough that the user registers it
+        // before we swap back to the sign-in form. Tuned by feel — short
+        // enough to not feel slow, long enough to read the success copy.
+        await new Promise((resolve) => setTimeout(resolve, 2200));
         setStage({ kind: "creds", mode: "signin" });
         setInfo("Email verified. Sign in below.");
         setCode("");
+        setVerifyStatus("idle");
       } else if (stage.kind === "mfa-totp" || stage.kind === "mfa-setup") {
         const step = await cognito.confirmSignIn(code);
         handleStep(step);
@@ -291,6 +303,7 @@ function SignInForm({ onDone }: { onDone: () => void }) {
       }
     } catch (e: unknown) {
       setError(toMessage(e));
+      setVerifyStatus("idle");
     } finally {
       setBusy(false);
     }
@@ -603,6 +616,42 @@ function SignInForm({ onDone }: { onDone: () => void }) {
         <p className="mt-4 text-center text-[11px] text-muted-foreground">
           Cognito not configured — using local mock auth.
         </p>
+      )}
+
+      {stage.kind === "confirm-signup" && verifyStatus !== "idle" && (
+        <div
+          className="animate-in fade-in absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-card/95 p-6 text-center backdrop-blur-sm duration-200"
+          role="status"
+          aria-live="polite"
+        >
+          {verifyStatus === "verifying" ? (
+            <>
+              <Loader2
+                className="text-primary h-14 w-14 animate-spin"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+              <p className="text-foreground mt-5 text-base font-semibold">
+                Verifying your email…
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">This will only take a moment.</p>
+            </>
+          ) : (
+            <>
+              <div className="relative flex h-20 w-20 items-center justify-center">
+                <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/30" />
+                <span className="absolute inset-2 rounded-full bg-emerald-500/10" />
+                <CheckCircle2
+                  className="animate-in zoom-in-50 relative h-16 w-16 text-emerald-500 duration-500"
+                  strokeWidth={1.75}
+                  aria-hidden
+                />
+              </div>
+              <p className="text-foreground mt-5 text-base font-semibold">Email verified!</p>
+              <p className="text-muted-foreground mt-1 text-xs">Taking you to sign in…</p>
+            </>
+          )}
+        </div>
       )}
     </Card>
   );
