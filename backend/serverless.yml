@@ -2,6 +2,13 @@ service: caresync-backend
 
 frameworkVersion: "4"
 
+# Serverless v4 ships with its own ESBuild integration that conflicts with
+# the `serverless-esbuild` plugin below. We keep the plugin (rather than
+# migrating) because we rely on its `loader: { .sql: text }` config to
+# bundle migration SQL files into the Lambda artifact.
+build:
+  esbuild: false
+
 provider:
   name: aws
   runtime: nodejs20.x
