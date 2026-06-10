@@ -12,23 +12,24 @@ provider:
   environment:
     NODE_ENV: ${self:provider.stage}
     STAGE: ${self:provider.stage}
-    # DB connectivity — DB_SECRET_ID is the Secrets Manager secret holding
-    # { username, password } for the RDS master user. DB_HOST is the RDS
-    # endpoint hostname (unchanged across rotations, so it's not in the
-    # secret itself).
+    # DB connectivity — DB_SECRET_ID is the Secrets Manager secret that
+    # RDS auto-creates when "Manage master credentials in AWS Secrets
+    # Manager" is enabled on the instance. It holds { username, password,
+    # engine, host, port, dbname } as JSON. DB_HOST is also in the secret
+    # but we pin it here so a stage swap doesn't require editing the
+    # secret. DB_NAME is "caresync" by default (RDS-managed secrets often
+    # leave dbname blank).
     DB_HOST: ${env:DB_HOST, 'caresync-db.cmf2m8o2079n.us-east-1.rds.amazonaws.com'}
     DB_NAME: caresync
-    DB_SECRET_ID: ${env:DB_SECRET_ID, 'caresync/rds/master'}
+    DB_SECRET_ID: ${env:DB_SECRET_ID, 'arn:aws:secretsmanager:us-east-1:810738286523:secret:rds!db-9eb52667-87ac-4e3f-8835-48c06143f5f4-qYdYRe'}
   iam:
     role:
       statements:
         - Effect: Allow
           Action:
             - secretsmanager:GetSecretValue
-          # Scoped to just the DB secret. The * suffix matches the six-
-          # character random version that Secrets Manager appends to the ARN.
           Resource:
-            - arn:aws:secretsmanager:${self:provider.region}:*:secret:${self:provider.environment.DB_SECRET_ID}-*
+            - 'arn:aws:secretsmanager:us-east-1:810738286523:secret:rds!db-9eb52667-87ac-4e3f-8835-48c06143f5f4-qYdYRe'
   # Lambdas attach to the same VPC as the RDS instance so they can reach it
   # over the private network. Subnet IDs + security group come from the
   # `vpc` custom block below so they're declared once.
@@ -42,15 +43,18 @@ plugins:
 
 custom:
   vpc:
-    # FILL THESE IN — see backend/README.md "VPC wiring" section for how to
-    # find them. The Lambda must sit in private subnets that have a route to
-    # both the RDS instance (port 3306) and to the internet (NAT Gateway or
-    # VPC endpoint) so it can reach Secrets Manager.
+    # The two private subnets in vpc-07191e25f3dcbb9a0. Lambdas spread
+    # across both AZs for HA. The Secrets Manager VPC interface endpoint
+    # must also live in these subnets — otherwise calls hang.
+    subnetIds:
+      - subnet-02815bff0638b46fd # CareSync-subnet-private1-us-east-1a
+      - subnet-008ee70de777cc0d5 # CareSync-subnet-private2-us-east-1b
+    # CareSync-lambda-sg — to be created (see backend/README.md "VPC wiring"
+    # section). Lambdas attach here; the SG also gets allowed inbound on
+    # the RDS SG (port 3306) and on the Secrets Manager VPC endpoint SG
+    # (port 443, self-referencing).
     securityGroupIds:
       - REPLACE_WITH_LAMBDA_SG_ID
-    subnetIds:
-      - REPLACE_WITH_PRIVATE_SUBNET_ID_AZ_A
-      - REPLACE_WITH_PRIVATE_SUBNET_ID_AZ_B
   esbuild:
     bundle: true
     minify: false
