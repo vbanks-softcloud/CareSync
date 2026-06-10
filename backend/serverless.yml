@@ -49,12 +49,12 @@ custom:
     subnetIds:
       - subnet-02815bff0638b46fd # CareSync-subnet-private1-us-east-1a
       - subnet-008ee70de777cc0d5 # CareSync-subnet-private2-us-east-1b
-    # CareSync-lambda-sg — to be created (see backend/README.md "VPC wiring"
-    # section). Lambdas attach here; the SG also gets allowed inbound on
-    # the RDS SG (port 3306) and on the Secrets Manager VPC endpoint SG
-    # (port 443, self-referencing).
+    # Shared SG used by Lambdas, the RDS SG inbound rule (port 3306), and
+    # the Secrets Manager VPC endpoint. Requires a self-referencing
+    # inbound 443 rule so Lambda ENIs in this SG can reach the endpoint
+    # ENI in this same SG.
     securityGroupIds:
-      - REPLACE_WITH_LAMBDA_SG_ID
+      - sg-0ba39216c69b6f0c6
   esbuild:
     bundle: true
     minify: false
