@@ -18,17 +18,16 @@ Parameters:
     Type: String
     Default: 10.0.0.0/16
 
-  PublicSubnetACidr:
-    Type: String
+  PublicSubnetACidr:    Type: String
     Default: 10.0.0.0/24
 
   PublicSubnetBCidr:
     Type: String
-    Default: 10.0.1.0/24
+    Default: 10.0.2.0/24
 
   PrivateDbSubnetACidr:
     Type: String
-    Default: 10.0.10.0/24
+    Default: 10.0.3.0/24
 
   PrivateDbSubnetBCidr:
     Type: String
@@ -213,7 +212,7 @@ Resources:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-db-subnet-group"
 
-  CareSyncDatabase:
+  caresync-db:
     Type: AWS::RDS::DBInstance
     Properties:
       DBInstanceIdentifier: !Sub "${ProjectName}-${Environment}-db"
