@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CareSync VPC, subnets, security groups, EC2 database client, DB subnet group, and private RDS MySQL database.
-
+i
 Parameters:
   ProjectName:
     Type: String
@@ -18,20 +18,21 @@ Parameters:
     Type: String
     Default: 10.0.0.0/16
 
-  PublicSubnetACidr:    Type: String
+  PublicSubnetACidr:   
+    Type: String
     Default: 10.0.0.0/24
 
   PublicSubnetBCidr:
     Type: String
-    Default: 10.0.2.0/24
+    Default: 10.0.1.0/24
 
   PrivateDbSubnetACidr:
     Type: String
-    Default: 10.0.3.0/24
+    Default: 10.0.2.0/24
 
   PrivateDbSubnetBCidr:
     Type: String
-    Default: 10.0.11.0/24
+    Default: 10.0.3.0/24
 
   AllowedSshCidr:
     Type: String
