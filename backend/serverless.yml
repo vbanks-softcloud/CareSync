@@ -12,20 +12,45 @@ provider:
   environment:
     NODE_ENV: ${self:provider.stage}
     STAGE: ${self:provider.stage}
-  # iam:
-  #   role:
-  #     statements:
-  #       - Effect: Allow
-  #         Action:
-  #           - dynamodb:GetItem
-  #           - dynamodb:PutItem
-  #         Resource: "*"
+    # DB connectivity — DB_SECRET_ID is the Secrets Manager secret holding
+    # { username, password } for the RDS master user. DB_HOST is the RDS
+    # endpoint hostname (unchanged across rotations, so it's not in the
+    # secret itself).
+    DB_HOST: ${env:DB_HOST, 'caresync-db.cmf2m8o2079n.us-east-1.rds.amazonaws.com'}
+    DB_NAME: caresync
+    DB_SECRET_ID: ${env:DB_SECRET_ID, 'caresync/rds/master'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          # Scoped to just the DB secret. The * suffix matches the six-
+          # character random version that Secrets Manager appends to the ARN.
+          Resource:
+            - arn:aws:secretsmanager:${self:provider.region}:*:secret:${self:provider.environment.DB_SECRET_ID}-*
+  # Lambdas attach to the same VPC as the RDS instance so they can reach it
+  # over the private network. Subnet IDs + security group come from the
+  # `vpc` custom block below so they're declared once.
+  vpc:
+    securityGroupIds: ${self:custom.vpc.securityGroupIds}
+    subnetIds: ${self:custom.vpc.subnetIds}
 
 plugins:
   - serverless-esbuild
   - serverless-offline
 
 custom:
+  vpc:
+    # FILL THESE IN — see backend/README.md "VPC wiring" section for how to
+    # find them. The Lambda must sit in private subnets that have a route to
+    # both the RDS instance (port 3306) and to the internet (NAT Gateway or
+    # VPC endpoint) so it can reach Secrets Manager.
+    securityGroupIds:
+      - REPLACE_WITH_LAMBDA_SG_ID
+    subnetIds:
+      - REPLACE_WITH_PRIVATE_SUBNET_ID_AZ_A
+      - REPLACE_WITH_PRIVATE_SUBNET_ID_AZ_B
   esbuild:
     bundle: true
     minify: false
@@ -33,6 +58,10 @@ custom:
     target: node20
     platform: node
     concurrency: 10
+    # Bundle .sql files as plain string imports. Used by handlers/applyMigration.ts
+    # to embed the schema files at build time.
+    loader:
+      .sql: text
 
 functions:
   health:
@@ -42,16 +71,26 @@ functions:
           path: /health
           method: get
 
+  # One-shot migration runner. No HTTP event — invoke manually via the AWS
+  # console or `sls invoke -f applyMigration -d '{"file":"001_initial_mysql_schema.sql"}'`.
+  applyMigration:
+    handler: src/handlers/applyMigration.handler
+    timeout: 60 # schema apply can take a few seconds; give it room
+
 # Future functions (uncomment and implement when ready):
-#  auth:
-#    handler: src/handlers/auth.handler
+#  cognitoPostConfirmation:
+#    handler: src/handlers/cognitoPostConfirmation.handler
+#    # No httpApi event — wired into the Cognito user pool's
+#    # PostConfirmation trigger via the AWS console.
+#  patients:
+#    handler: src/handlers/patients.handler
 #    events:
 #      - httpApi:
-#          path: /auth/{proxy+}
+#          path: /api/patients
 #          method: any
 #  notes:
 #    handler: src/handlers/notes.handler
 #    events:
 #      - httpApi:
-#          path: /notes/{proxy+}
+#          path: /api/patients/{patientId}/notes
 #          method: any
