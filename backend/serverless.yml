@@ -18,14 +18,15 @@ provider:
   timeout: 10
   # CORS for the HTTP API. caresync.fyi calls these endpoints from the
   # browser via the API Gateway origin (different host), so without this
-  # block every request fails the preflight. localhost:5173 is the Vite
-  # dev server origin so developers can hit the deployed API from local.
+  # block every request fails the preflight. localhost:8080 is the port
+  # the Vite dev server is pinned to (frontend/vite.config.ts) so devs
+  # can hit the deployed API from `npm run dev:frontend`.
   httpApi:
     cors:
       allowedOrigins:
         - https://caresync.fyi
         - https://www.caresync.fyi
-        - http://localhost:5173
+        - http://localhost:8080
       allowedHeaders:
         - Content-Type
         - Authorization
