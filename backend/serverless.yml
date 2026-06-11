@@ -88,11 +88,21 @@ functions:
     handler: src/handlers/applyMigration.handler
     timeout: 60 # schema apply can take a few seconds; give it room
 
+  # Cognito User Pool PostConfirmation trigger. Inserts a row into `users`
+  # keyed by cognito_sub the moment a new user finishes signup.
+  # Wiring: AWS Console → Cognito user pool → User pool properties →
+  # Lambda triggers → "Post confirmation trigger" → select this function.
+  cognitoPostConfirmation:
+    handler: src/handlers/cognitoPostConfirmation.handler
+    timeout: 10 # well under Cognito's 5s expectation for cold starts
+
+  # Dev convenience: dumps a snapshot of every table in the DB.
+  # `sls invoke -f inspectDb --stage dev`
+  inspectDb:
+    handler: src/handlers/inspectDb.handler
+    timeout: 30
+
 # Future functions (uncomment and implement when ready):
-#  cognitoPostConfirmation:
-#    handler: src/handlers/cognitoPostConfirmation.handler
-#    # No httpApi event — wired into the Cognito user pool's
-#    # PostConfirmation trigger via the AWS console.
 #  patients:
 #    handler: src/handlers/patients.handler
 #    events:
