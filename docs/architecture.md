@@ -136,6 +136,32 @@ Planned security controls:
 * Secrets Manager for database credentials
 * Least-privilege access model
 
+## Web Application Firewall (WAF)
+
+CareSync uses AWS WAF to help protect the application from common web threats before traffic reaches the frontend.
+
+AWS WAF is associated with the CloudFront distribution and acts as the first layer of defense for incoming web requests.
+
+Security benefits:
+
+- Filters malicious traffic
+- Helps mitigate common web attacks
+- Provides managed and custom security rules
+- Adds an extra layer of protection before requests reach CloudFront
+
+Traffic flow:
+
+User
+↓
+AWS WAF
+↓
+CloudFront
+↓
+S3 Frontend
+↓
+Amazon Cognito
+↓
+Application Services
 ---
 
 ## DevOps Responsibilities
