@@ -1,0 +1,293 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CareSync VPC, subnets, security groups, EC2 database client, DB subnet group, and private RDS MySQL database.
+Parameters:
+  ProjectName:
+    Type: String
+    Default: caresync
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnetACidr:
+    Type: String
+    Default: 10.0.0.0/24
+
+  PublicSubnetBCidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PrivateDbSubnetACidr:
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateDbSubnetBCidr:
+    Type: String
+    Default: 10.0.3.0/24
+
+  AllowedSshCidr:
+    Type: String
+    Description: Your public IP in CIDR format for SSH access to EC2, for example 203.0.113.10/32
+    Default: 0.0.0.0/0
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 key pair for the optional database client instance.
+
+  DBName:
+    Type: String
+    Default: caresync
+
+  DBUsername:
+    Type: String
+    Default: admin
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Master password for the RDS MySQL database. Do not commit real passwords.
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+
+Resources:
+  CareSyncVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-vpc"
+
+  CareSyncInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-igw"
+
+  CareSyncVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref CareSyncVPC
+      InternetGatewayId: !Ref CareSyncInternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CareSyncVPC
+      CidrBlock: !Ref PublicSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-public-subnet-a"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CareSyncVPC
+      CidrBlock: !Ref PublicSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-public-subnet-b"
+
+  PrivateDbSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CareSyncVPC
+      CidrBlock: !Ref PrivateDbSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-private-db-subnet-a"
+
+  PrivateDbSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CareSyncVPC
+      CidrBlock: !Ref PrivateDbSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-private-db-subnet-b"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CareSyncVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-public-rt"
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: CareSyncVPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref CareSyncInternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows SSH access to the CareSync EC2 database client
+      VpcId: !Ref CareSyncVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSshCidr
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-ec2-sg"
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for CareSync Lambda functions
+      VpcId: !Ref CareSyncVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-lambda-sg"
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows MySQL access from EC2 and Lambda only
+      VpcId: !Ref CareSyncVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-rds-sg"
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private DB subnets across two AZs for CareSync RDS
+      SubnetIds:
+        - !Ref PrivateDbSubnetA
+        - !Ref PrivateDbSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-db-subnet-group"
+
+  caresync-db:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-${Environment}-db"
+      DBName: !Ref DBName
+      Engine: mysql
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+      MultiAZ: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-db"
+
+  DBClientInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
+      InstanceType: t3.micro
+      KeyName: !Ref KeyName
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-db-client"
+
+Outputs:
+  VpcId:
+    Description: CareSync VPC ID
+    Value: !Ref CareSyncVPC
+
+  PublicSubnetAId:
+    Description: Public subnet A ID
+    Value: !Ref PublicSubnetA
+
+  PublicSubnetBId:
+    Description: Public subnet B ID
+    Value: !Ref PublicSubnetB
+
+  PrivateDbSubnetAId:
+    Description: Private DB subnet A ID
+    Value: !Ref PrivateDbSubnetA
+
+  PrivateDbSubnetBId:
+    Description: Private DB subnet B ID
+    Value: !Ref PrivateDbSubnetB
+
+  EC2SecurityGroupId:
+    Description: EC2 database client security group ID
+    Value: !Ref EC2SecurityGroup
+
+  LambdaSecurityGroupId:
+    Description: Lambda security group ID
+    Value: !Ref LambdaSecurityGroup
+
+  RDSSecurityGroupId:
+    Description: RDS security group ID
+    Value: !Ref RDSSecurityGroup
+
+  DBSubnetGroupName:
+    Description: RDS DB subnet group name
+    Value: !Ref DBSubnetGroup
+
+  RDSEndpoint:
+    Description: RDS MySQL endpoint
+    Value: !GetAtt CareSyncDatabase.Endpoint.Address
+
+  DBClientPublicIp:
+    Description: Public IP for the EC2 database client
+    Value: !GetAtt DBClientInstance.PublicIp
