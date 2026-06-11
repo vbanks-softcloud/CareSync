@@ -83,6 +83,41 @@ Current Status:
 
 * Backend Lambda development is in progress
 
+## Backend Services
+   AWS Lambda
+
+CareSync uses AWS Lambda for backend application logic.
+
+Verified Lambda functions include:
+
+. PatientsLambdaFunction
+. Cognito post-confirmation functions
+. Migration functions
+
+Lambda functions are deployed using the Serverless Framework and run inside the CareSync AWS environment.
+
+## Amazon API Gateway
+
+Amazon API Gateway provides HTTP endpoints for frontend-to-backend communication.
+
+API Gateway routes requests from the frontend application to the appropriate Lambda functions.
+
+This architecture allows the frontend application to securely access backend services without direct database access.
+
+## Amazon CloudWatch
+
+Amazon CloudWatch is used for monitoring and logging backend services.
+
+Verified capabilities include:
+
+. Lambda execution logs
+. Invocation metrics
+. Duration monitoring
+. Memory utilization monitoring
+. Error tracking
+
+CloudWatch log groups are automatically generated for deployed Lambda functions and provide operational visibility into backend activity.
+
 ---
 
 ## Database Layer
@@ -272,3 +307,26 @@ Planned:
 * Infrastructure as Code
 * Monitoring dashboards
 * Automated deployments
+
+## Current Infrastructure Status
+# Frontend
+
+Amazon S3
+Amazon CloudFront
+AWS WAF
+Amazon Cognito
+
+# Backend
+
+AWS Lambda
+Amazon API Gateway
+Amazon CloudWatch Logs
+
+# Database and Networking
+
+Amazon RDS MySQL
+Amazon VPC
+Security Groups
+AWS Secrets Manager
+
+# Status: Operational and verified.
