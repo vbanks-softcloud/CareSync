@@ -17,11 +17,23 @@ import { getDb } from "../lib/db.js";
 
 // @ts-expect-error — esbuild text loader bundles the SQL file as a string.
 import schema001 from "../../../database/schemas/001_initial_mysql_schema.sql";
+// @ts-expect-error — esbuild text loader bundles the SQL file as a string.
+import schema002 from "../../../database/schemas/002_add_updated_at_to_care_notes.sql";
+// @ts-expect-error — esbuild text loader bundles the SQL file as a string.
+import schema003 from "../../../database/schemas/003_add_per_field_edit_timestamps.sql";
+// @ts-expect-error — esbuild text loader bundles the SQL file as a string.
+import schema004 from "../../../database/schemas/004_add_miscellaneous_notes.sql";
+// @ts-expect-error — esbuild text loader bundles the SQL file as a string.
+import schema005 from "../../../database/schemas/005_add_birthdate_and_gender_to_patients.sql";
 
 // Add new entries here as you add new migration files. The key is what the
 // caller passes in `event.file`; the value is the embedded SQL string.
 const MIGRATIONS: Record<string, string> = {
   "001_initial_mysql_schema.sql": schema001 as string,
+  "002_add_updated_at_to_care_notes.sql": schema002 as string,
+  "003_add_per_field_edit_timestamps.sql": schema003 as string,
+  "004_add_miscellaneous_notes.sql": schema004 as string,
+  "005_add_birthdate_and_gender_to_patients.sql": schema005 as string,
 };
 
 export type ApplyMigrationEvent = {

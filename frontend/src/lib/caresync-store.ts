@@ -11,8 +11,21 @@ export type Note = {
   careProvided: string | null;
   patientStatus: string | null;
   followUpNeeded: string | null;
+  /** Free-form catch-all section. */
+  miscellaneousNotes: string | null;
   /** ISO-8601 timestamp. */
   createdAt: string;
+  /** ISO-8601 timestamp. Equal to createdAt until the note has been edited. */
+  updatedAt: string;
+  /** Per-field "last edited at" ISO-8601 timestamps. null means the field
+   * has never been edited since the note was created. The UI uses these
+   * to badge individual sections with their own edit times. */
+  transcriptEditedAt: string | null;
+  patientConcernEditedAt: string | null;
+  careProvidedEditedAt: string | null;
+  patientStatusEditedAt: string | null;
+  followUpNeededEditedAt: string | null;
+  miscellaneousNotesEditedAt: string | null;
 };
 
 /** Subset of Note fields the user fills in during the review step. Kept
@@ -23,6 +36,7 @@ export type StructuredNote = {
   careProvided: string;
   patientStatus: string;
   followUpNeeded: string;
+  miscellaneousNotes: string;
 };
 
 // Field names mirror the `patients` columns in
@@ -34,6 +48,10 @@ export type Patient = {
   age: number;
   room: string | null;
   conditionSummary: string | null;
+  /** ISO date string YYYY-MM-DD, or null if unknown at intake. */
+  birthdate: string | null;
+  /** Free-form: "Male", "Female", "Other", "Prefer not to say", or null. */
+  gender: string | null;
   createdBy: string | null;
   /** ISO-8601 timestamps. */
   createdAt: string;
@@ -77,12 +95,26 @@ export type NewPatient = {
   age: number;
   room?: string;
   conditionSummary?: string;
+  /** YYYY-MM-DD. */
+  birthdate?: string;
+  gender?: string;
 };
 
 export async function createPatient(patient: NewPatient): Promise<Patient> {
   return apiFetch<Patient>("/api/patients", {
     method: "POST",
     body: patient,
+  });
+}
+
+// Partial update for a patient. Only the fields you include are sent — the
+// backend handles PATCH-style semantics even though the route is PUT.
+export type PatientPatch = Partial<NewPatient>;
+
+export async function updatePatient(id: string, patch: PatientPatch): Promise<Patient> {
+  return apiFetch<Patient>(`/api/patients/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: patch,
   });
 }
 
@@ -99,7 +131,24 @@ export type NewNote = {
   careProvided?: string;
   patientStatus?: string;
   followUpNeeded?: string;
+  miscellaneousNotes?: string;
 };
+
+export type NotePatch = Partial<NewNote>;
+
+export async function updateNote(
+  patientId: string,
+  noteId: string,
+  patch: NotePatch,
+): Promise<Note> {
+  return apiFetch<Note>(
+    `/api/patients/${encodeURIComponent(patientId)}/notes/${encodeURIComponent(noteId)}`,
+    {
+      method: "PUT",
+      body: patch,
+    },
+  );
+}
 
 export async function createNote(patientId: string, note: NewNote): Promise<Note> {
   return apiFetch<Note>(`/api/patients/${encodeURIComponent(patientId)}/notes`, {
@@ -377,5 +426,8 @@ export function structureTranscript(text: string): StructuredNote {
     careProvided: care,
     patientStatus: status,
     followUpNeeded: follow,
+    // The naive structurer doesn't try to pull anything for "miscellaneous"
+    // — that's the catch-all the user fills in by hand.
+    miscellaneousNotes: "",
   };
 }

@@ -35,6 +35,13 @@ type Patient = {
   age: number;
   room: string | null;
   conditionSummary: string | null;
+  // ISO date string (YYYY-MM-DD). Added by migration 005. Null when
+  // unknown at intake — the UI falls back to the `age` column for display.
+  birthdate: string | null;
+  // Free-form string ("Male", "Female", "Other", "Prefer not to say", ...).
+  // Stored as VARCHAR rather than ENUM so we can add new options without
+  // a schema migration.
+  gender: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -46,18 +53,31 @@ type PatientRow = {
   age: number;
   room: string | null;
   condition_summary: string | null;
+  // mysql2 returns DATE columns as Date objects unless dateStrings is on.
+  // We slice to YYYY-MM-DD for the wire format.
+  birthdate: Date | string | null;
+  gender: string | null;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
 };
 
 function rowToPatient(row: PatientRow): Patient {
+  let birthdate: string | null = null;
+  if (row.birthdate instanceof Date) {
+    // toISOString() returns full timestamp; we want just the date portion.
+    birthdate = row.birthdate.toISOString().slice(0, 10);
+  } else if (typeof row.birthdate === "string" && row.birthdate.length >= 10) {
+    birthdate = row.birthdate.slice(0, 10);
+  }
   return {
     id: row.id,
     name: row.name,
     age: row.age,
     room: row.room,
     conditionSummary: row.condition_summary,
+    birthdate,
+    gender: row.gender ?? null,
     createdBy: row.created_by,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -115,11 +135,13 @@ type CreateBody = {
   age?: unknown;
   room?: unknown;
   conditionSummary?: unknown;
+  birthdate?: unknown;
+  gender?: unknown;
 };
 
 async function create(callerUserId: string, rawBody: string | undefined | null) {
   const body = parseJsonBody<CreateBody>(rawBody ?? "");
-  const { name, age, room, conditionSummary } = validateCreate(body);
+  const { name, age, room, conditionSummary, birthdate, gender } = validateCreate(body);
 
   const db = await getDb();
 
@@ -130,9 +152,10 @@ async function create(callerUserId: string, rawBody: string | undefined | null) 
   const id = crypto.randomUUID();
 
   await db.query<ResultSetHeader>(
-    `INSERT INTO patients (id, name, age, room, condition_summary, created_by)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, name, age, room, conditionSummary, callerUserId],
+    `INSERT INTO patients
+       (id, name, age, room, condition_summary, birthdate, gender, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name, age, room, conditionSummary, birthdate, gender, callerUserId],
   );
 
   const [rows] = await db.query<RowDataPacket[]>(
@@ -147,6 +170,8 @@ type UpdateBody = {
   age?: unknown;
   room?: unknown;
   conditionSummary?: unknown;
+  birthdate?: unknown;
+  gender?: unknown;
 };
 
 async function update(callerUserId: string, id: string, rawBody: string | undefined | null) {
@@ -171,6 +196,14 @@ async function update(callerUserId: string, id: string, rawBody: string | undefi
   if (body.conditionSummary !== undefined) {
     fields.push("condition_summary = ?");
     values.push(optionalString("conditionSummary", body.conditionSummary));
+  }
+  if (body.birthdate !== undefined) {
+    fields.push("birthdate = ?");
+    values.push(optionalBirthdate(body.birthdate));
+  }
+  if (body.gender !== undefined) {
+    fields.push("gender = ?");
+    values.push(optionalString("gender", body.gender));
   }
 
   if (fields.length === 0) {
@@ -209,13 +242,42 @@ function validateCreate(body: CreateBody): {
   age: number;
   room: string | null;
   conditionSummary: string | null;
+  birthdate: string | null;
+  gender: string | null;
 } {
   return {
     name: requireString("name", body.name),
     age: requireAge(body.age),
     room: optionalString("room", body.room),
     conditionSummary: optionalString("conditionSummary", body.conditionSummary),
+    birthdate: optionalBirthdate(body.birthdate),
+    gender: optionalString("gender", body.gender),
   };
+}
+
+// Accepts a YYYY-MM-DD string (or null/empty for no birthdate). We don't
+// store time-of-day so anything more precise is rejected, and we cap the
+// allowed range at "anything from 1900 to today" — that catches almost all
+// real birthdates but flags obvious typos like 2026 or 0023.
+function optionalBirthdate(v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v !== "string") {
+    throw new ClientError("Field 'birthdate' must be a YYYY-MM-DD string.");
+  }
+  const trimmed = v.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new ClientError("Field 'birthdate' must be in YYYY-MM-DD format.");
+  }
+  const parsed = new Date(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ClientError("Field 'birthdate' is not a valid date.");
+  }
+  const year = parsed.getUTCFullYear();
+  const now = new Date();
+  if (year < 1900 || parsed > now) {
+    throw new ClientError("Field 'birthdate' must be between 1900 and today.");
+  }
+  return trimmed;
 }
 
 function requireString(field: string, v: unknown): string {

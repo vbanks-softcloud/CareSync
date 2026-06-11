@@ -37,7 +37,19 @@ type Note = {
   careProvided: string | null;
   patientStatus: string | null;
   followUpNeeded: string | null;
+  // Migration 004: free-form catch-all section.
+  miscellaneousNotes: string | null;
   createdAt: string;
+  updatedAt: string;
+  // Per-field edit timestamps (migrations 003 + 004). null means the field
+  // has never been edited since the note was created. The UI uses these to
+  // badge individual sections with their own "Last edited" times.
+  transcriptEditedAt: string | null;
+  patientConcernEditedAt: string | null;
+  careProvidedEditedAt: string | null;
+  patientStatusEditedAt: string | null;
+  followUpNeededEditedAt: string | null;
+  miscellaneousNotesEditedAt: string | null;
 };
 
 type NoteRow = {
@@ -49,7 +61,18 @@ type NoteRow = {
   care_provided: string | null;
   patient_status: string | null;
   follow_up_needed: string | null;
+  miscellaneous_notes: string | null;
   created_at: Date;
+  // Added by migration 002. Backfilled to created_at for rows that pre-date
+  // the column, so old notes don't render as "just edited" in the UI.
+  updated_at: Date;
+  // Added by migrations 003 + 004.
+  transcript_edited_at: Date | null;
+  patient_concern_edited_at: Date | null;
+  care_provided_edited_at: Date | null;
+  patient_status_edited_at: Date | null;
+  follow_up_needed_edited_at: Date | null;
+  miscellaneous_notes_edited_at: Date | null;
 };
 
 function rowToNote(row: NoteRow): Note {
@@ -62,7 +85,15 @@ function rowToNote(row: NoteRow): Note {
     careProvided: row.care_provided,
     patientStatus: row.patient_status,
     followUpNeeded: row.follow_up_needed,
+    miscellaneousNotes: row.miscellaneous_notes,
     createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    transcriptEditedAt: row.transcript_edited_at?.toISOString() ?? null,
+    patientConcernEditedAt: row.patient_concern_edited_at?.toISOString() ?? null,
+    careProvidedEditedAt: row.care_provided_edited_at?.toISOString() ?? null,
+    patientStatusEditedAt: row.patient_status_edited_at?.toISOString() ?? null,
+    followUpNeededEditedAt: row.follow_up_needed_edited_at?.toISOString() ?? null,
+    miscellaneousNotesEditedAt: row.miscellaneous_notes_edited_at?.toISOString() ?? null,
   };
 }
 
@@ -147,6 +178,7 @@ type CreateBody = {
   careProvided?: unknown;
   patientStatus?: unknown;
   followUpNeeded?: unknown;
+  miscellaneousNotes?: unknown;
 };
 
 async function create(
@@ -163,8 +195,9 @@ async function create(
   await db.query<ResultSetHeader>(
     `INSERT INTO care_notes (
        id, patient_id, caregiver_id, transcript,
-       patient_concern, care_provided, patient_status, follow_up_needed
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       patient_concern, care_provided, patient_status, follow_up_needed,
+       miscellaneous_notes
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       patientId,
@@ -174,6 +207,7 @@ async function create(
       fields.careProvided,
       fields.patientStatus,
       fields.followUpNeeded,
+      fields.miscellaneousNotes,
     ],
   );
 
@@ -190,6 +224,7 @@ type UpdateBody = {
   careProvided?: unknown;
   patientStatus?: unknown;
   followUpNeeded?: unknown;
+  miscellaneousNotes?: unknown;
 };
 
 async function update(
@@ -199,35 +234,78 @@ async function update(
 ) {
   const body = parseJsonBody<UpdateBody>(rawBody ?? "");
 
-  // PATCH-style: only update the fields the caller actually sent.
+  // We need the current row so we can compare-by-value and only bump the
+  // per-field _edited_at columns when a field's value actually changed.
+  // Without this, saving the dialog with no real edits would stamp every
+  // column as "just edited", which is the opposite of what the UI wants.
+  const db = await getDb();
+  const [existingRows] = await db.query<RowDataPacket[]>(
+    "SELECT * FROM care_notes WHERE id = ? AND patient_id = ? LIMIT 1",
+    [noteId, patientId],
+  );
+  if (existingRows.length === 0) return notFound("Note");
+  const existing = existingRows[0] as NoteRow;
+
+  // PATCH-style: only update the fields the caller actually sent. For each
+  // sent field, set its value column AND its _edited_at column ONLY if the
+  // value differs from what's already in the row.
   const sets: string[] = [];
   const values: unknown[] = [];
+
+  const maybeUpdate = (
+    sent: unknown,
+    column: string,
+    editedColumn: string,
+    normalize: (v: unknown) => string | null,
+  ) => {
+    if (sent === undefined) return;
+    const next = normalize(sent);
+    const current = (existing as Record<string, unknown>)[column];
+    // Compare against null/empty consistently — optionalString returns null
+    // for empty strings, and the DB stores NULL for cleared fields.
+    const changed = (current ?? null) !== (next ?? null);
+    if (changed) {
+      sets.push(`${column} = ?`);
+      values.push(next);
+      sets.push(`${editedColumn} = CURRENT_TIMESTAMP`);
+    }
+  };
+
+  // Transcript is required (never nullable), so use a wrapper that throws
+  // if a non-string snuck through. Everything else allows null.
   if (body.transcript !== undefined) {
-    sets.push("transcript = ?");
-    values.push(requireString("transcript", body.transcript));
+    const next = requireString("transcript", body.transcript);
+    if (existing.transcript !== next) {
+      sets.push("transcript = ?");
+      values.push(next);
+      sets.push("transcript_edited_at = CURRENT_TIMESTAMP");
+    }
   }
-  if (body.patientConcern !== undefined) {
-    sets.push("patient_concern = ?");
-    values.push(optionalString("patientConcern", body.patientConcern));
-  }
-  if (body.careProvided !== undefined) {
-    sets.push("care_provided = ?");
-    values.push(optionalString("careProvided", body.careProvided));
-  }
-  if (body.patientStatus !== undefined) {
-    sets.push("patient_status = ?");
-    values.push(optionalString("patientStatus", body.patientStatus));
-  }
-  if (body.followUpNeeded !== undefined) {
-    sets.push("follow_up_needed = ?");
-    values.push(optionalString("followUpNeeded", body.followUpNeeded));
-  }
+  maybeUpdate(body.patientConcern, "patient_concern", "patient_concern_edited_at", (v) =>
+    optionalString("patientConcern", v),
+  );
+  maybeUpdate(body.careProvided, "care_provided", "care_provided_edited_at", (v) =>
+    optionalString("careProvided", v),
+  );
+  maybeUpdate(body.patientStatus, "patient_status", "patient_status_edited_at", (v) =>
+    optionalString("patientStatus", v),
+  );
+  maybeUpdate(body.followUpNeeded, "follow_up_needed", "follow_up_needed_edited_at", (v) =>
+    optionalString("followUpNeeded", v),
+  );
+  maybeUpdate(
+    body.miscellaneousNotes,
+    "miscellaneous_notes",
+    "miscellaneous_notes_edited_at",
+    (v) => optionalString("miscellaneousNotes", v),
+  );
 
   if (sets.length === 0) {
-    throw new ClientError("No updatable fields provided.");
+    // No fields actually changed. Return the existing row so the client's
+    // optimistic update lines up with what's in the DB.
+    return ok(rowToNote(existing));
   }
 
-  const db = await getDb();
   // Scope the UPDATE to (id, patient_id) so a caller can't update a note by
   // ID alone if they happen to know the UUID — the URL path is part of the
   // identity check.
@@ -260,6 +338,7 @@ function validateCreate(body: CreateBody): {
   careProvided: string | null;
   patientStatus: string | null;
   followUpNeeded: string | null;
+  miscellaneousNotes: string | null;
 } {
   return {
     transcript: requireString("transcript", body.transcript),
@@ -267,6 +346,7 @@ function validateCreate(body: CreateBody): {
     careProvided: optionalString("careProvided", body.careProvided),
     patientStatus: optionalString("patientStatus", body.patientStatus),
     followUpNeeded: optionalString("followUpNeeded", body.followUpNeeded),
+    miscellaneousNotes: optionalString("miscellaneousNotes", body.miscellaneousNotes),
   };
 }
 
