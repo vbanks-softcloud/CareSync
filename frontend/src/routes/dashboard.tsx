@@ -338,6 +338,19 @@ function Dashboard() {
                 <Stat icon={FileText} label="Notes" value={notes.length} />
               </div>
 
+              {/* One-tap add-patient affordance for mobile. Desktop already
+                  exposes this through the sidebar's "+ Add" button, so this
+                  row is hidden at lg+. Putting it directly above the tabs
+                  keeps the action in the user's focus without competing
+                  with the patient context above. */}
+              <Button
+                variant="outline"
+                onClick={() => setShowAdd(true)}
+                className="w-full gap-2 lg:hidden"
+              >
+                <Plus className="h-4 w-4" /> Add patient
+              </Button>
+
               {/* Tabbed workflow */}
               <Tabs value={tab} onValueChange={setTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-3">
