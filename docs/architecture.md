@@ -212,6 +212,37 @@ Planned monitoring services:
 * API Gateway Monitoring
 * RDS Monitoring
 
+## Logging and Monitoring
+
+CareSync uses a dedicated Amazon S3 bucket for log storage.
+
+Potential log sources include:
+
+- CloudFront access logs
+- Security-related logs
+- Operational monitoring data
+
+Benefits:
+
+- Troubleshooting
+- Auditability
+- Security monitoring
+- Historical log retention
+
+Architecture:
+
+User
+↓
+AWS WAF
+↓
+CloudFront
+↓
+S3 Frontend
+
+CloudFront Logs
+↓
+S3 Logs Bucket
+
 ---
 
 ## Current Project Status
