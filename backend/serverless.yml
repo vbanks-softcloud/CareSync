@@ -161,3 +161,25 @@ functions:
       - httpApi:
           path: /api/patients/{id}
           method: delete
+
+  # Care notes are always scoped to a patient — the patient ID is part of
+  # the route. Single Lambda handles list + create + per-note get/update/
+  # delete by dispatching on method + pathParameters.
+  notes:
+    handler: src/handlers/notes.handler
+    events:
+      - httpApi:
+          path: /api/patients/{patientId}/notes
+          method: get
+      - httpApi:
+          path: /api/patients/{patientId}/notes
+          method: post
+      - httpApi:
+          path: /api/patients/{patientId}/notes/{noteId}
+          method: get
+      - httpApi:
+          path: /api/patients/{patientId}/notes/{noteId}
+          method: put
+      - httpApi:
+          path: /api/patients/{patientId}/notes/{noteId}
+          method: delete
