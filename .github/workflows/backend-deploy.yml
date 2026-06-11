@@ -55,7 +55,12 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy backend
-        run: npm run deploy:backend -- --stage ${{ github.event.inputs.stage || 'dev' }}
+        # Use the workspace-level `deploy:<stage>` scripts directly because the
+        # npm-workspace passthrough strips `-- --stage dev` somewhere between
+        # the root, the workspace shim, and serverless itself. The workspace
+        # has hardcoded scripts (deploy:dev, deploy:prod) so we route via
+        # those instead.
+        run: npm run deploy:${{ github.event.inputs.stage || 'dev' }} --workspace=@caresync/backend
         env:
           # Serverless Framework v4 requires an access key for non-interactive
           # CLI use. Generate one at https://app.serverless.com/ → Org
