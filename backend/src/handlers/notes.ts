@@ -1,18 +1,19 @@
 /**
- * Care notes CRUD, scoped to a patient.
+ * Care notes CRUD, scoped to a patient AND to the calling user.
  *
- *   GET    /api/patients/{patientId}/notes              → list notes for a
- *                                                          patient, newest first
- *   POST   /api/patients/{patientId}/notes              → create a note (the
- *                                                          authed user becomes
- *                                                          the caregiver)
+ *   GET    /api/patients/{patientId}/notes              → list notes for one
+ *                                                          of YOUR patients
+ *   POST   /api/patients/{patientId}/notes              → create a note for one
+ *                                                          of YOUR patients
  *   GET    /api/patients/{patientId}/notes/{noteId}     → fetch one note
  *   PUT    /api/patients/{patientId}/notes/{noteId}     → update a note
  *   DELETE /api/patients/{patientId}/notes/{noteId}     → delete a note
  *
- * All routes 404 if the parent patient doesn't exist OR the note doesn't
- * belong to that patient — the {patientId} in the path is treated as part
- * of the row's identity, not just a routing hint.
+ * The first thing every request does is verify the parent patient exists
+ * AND was created by the caller — that single check inherits ownership
+ * down to notes, since you can only ever read/write notes for patients
+ * you created. All "not yours" cases return 404 so we don't leak the
+ * existence of resources owned by other users.
  */
 
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -76,10 +77,13 @@ export const handler = withAuth(async (event, user) => {
     return notFound("Patient");
   }
 
-  // Confirm the patient exists once, up front. Saves us from relying on FK
-  // constraint errors for the 404 case (they bubble up as 500s otherwise).
-  const patientExists = await checkPatientExists(patientId);
-  if (!patientExists) return notFound("Patient");
+  // Confirm the patient exists AND was created by the caller. This single
+  // gate is how note ownership inherits from patient ownership: if you
+  // didn't create the patient, you can't even reach the notes handlers
+  // below for it. 404 (not 403) so we don't leak that someone else's
+  // patient with that id exists.
+  const patientOwned = await checkPatientOwnedByUser(patientId, user.userId);
+  if (!patientOwned) return notFound("Patient");
 
   if (noteId) {
     switch (method) {
@@ -104,11 +108,14 @@ export const handler = withAuth(async (event, user) => {
   }
 });
 
-async function checkPatientExists(patientId: string): Promise<boolean> {
+async function checkPatientOwnedByUser(
+  patientId: string,
+  callerUserId: string,
+): Promise<boolean> {
   const db = await getDb();
   const [rows] = await db.query<RowDataPacket[]>(
-    "SELECT 1 FROM patients WHERE id = ? LIMIT 1",
-    [patientId],
+    "SELECT 1 FROM patients WHERE id = ? AND created_by = ? LIMIT 1",
+    [patientId, callerUserId],
   );
   return rows.length > 0;
 }

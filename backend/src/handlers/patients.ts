@@ -5,13 +5,16 @@
  * routes both paths to this handler, and we branch on method + presence of
  * the {id} path parameter.
  *
- *   GET    /api/patients         → list all patients (every caregiver sees
- *                                  every patient — this is a small clinical
- *                                  team app, not a multi-tenant SaaS)
+ *   GET    /api/patients         → list patients YOU created (scoped to caller)
  *   POST   /api/patients         → create a patient (created_by = caller)
- *   GET    /api/patients/{id}    → get one patient
- *   PUT    /api/patients/{id}    → update a patient
- *   DELETE /api/patients/{id}    → delete a patient (cascades to care_notes)
+ *   GET    /api/patients/{id}    → get one of YOUR patients (404 otherwise)
+ *   PUT    /api/patients/{id}    → update one of YOUR patients
+ *   DELETE /api/patients/{id}    → delete one of YOUR patients (cascades to care_notes)
+ *
+ * Scoping model: every query includes `WHERE created_by = ?` so user A can
+ * never read, mutate, or delete user B's patients. A handler that targets a
+ * patient not owned by the caller returns 404 (not 403) so we don't leak
+ * the existence of resources owned by other users.
  */
 
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -68,11 +71,11 @@ export const handler = withAuth(async (event, user) => {
   if (patientId) {
     switch (method) {
       case "GET":
-        return await getOne(patientId);
+        return await getOne(user.userId, patientId);
       case "PUT":
-        return await update(patientId, event.body);
+        return await update(user.userId, patientId, event.body);
       case "DELETE":
-        return await remove(patientId);
+        return await remove(user.userId, patientId);
       default:
         return methodNotAllowed(method);
     }
@@ -80,7 +83,7 @@ export const handler = withAuth(async (event, user) => {
 
   switch (method) {
     case "GET":
-      return await list();
+      return await list(user.userId);
     case "POST":
       return await create(user.userId, event.body);
     default:
@@ -88,19 +91,20 @@ export const handler = withAuth(async (event, user) => {
   }
 });
 
-async function list() {
+async function list(callerUserId: string) {
   const db = await getDb();
   const [rows] = await db.query<RowDataPacket[]>(
-    "SELECT * FROM patients ORDER BY created_at DESC",
+    "SELECT * FROM patients WHERE created_by = ? ORDER BY created_at DESC",
+    [callerUserId],
   );
   return ok({ patients: (rows as PatientRow[]).map(rowToPatient) });
 }
 
-async function getOne(id: string) {
+async function getOne(callerUserId: string, id: string) {
   const db = await getDb();
   const [rows] = await db.query<RowDataPacket[]>(
-    "SELECT * FROM patients WHERE id = ? LIMIT 1",
-    [id],
+    "SELECT * FROM patients WHERE id = ? AND created_by = ? LIMIT 1",
+    [id, callerUserId],
   );
   if (rows.length === 0) return notFound("Patient");
   return ok(rowToPatient(rows[0] as PatientRow));
@@ -145,7 +149,7 @@ type UpdateBody = {
   conditionSummary?: unknown;
 };
 
-async function update(id: string, rawBody: string | undefined | null) {
+async function update(callerUserId: string, id: string, rawBody: string | undefined | null) {
   const body = parseJsonBody<UpdateBody>(rawBody ?? "");
 
   // Only update the fields actually provided. Lets the frontend send partial
@@ -174,9 +178,12 @@ async function update(id: string, rawBody: string | undefined | null) {
   }
 
   const db = await getDb();
+  // The created_by check makes this UPDATE a no-op when the caller doesn't
+  // own the row. The 404 below treats "not yours" the same as "doesn't
+  // exist" so we don't leak the existence of other users' patients.
   const [result] = await db.query<ResultSetHeader>(
-    `UPDATE patients SET ${fields.join(", ")} WHERE id = ?`,
-    [...values, id],
+    `UPDATE patients SET ${fields.join(", ")} WHERE id = ? AND created_by = ?`,
+    [...values, id, callerUserId],
   );
   if (result.affectedRows === 0) return notFound("Patient");
 
@@ -187,11 +194,11 @@ async function update(id: string, rawBody: string | undefined | null) {
   return ok(rowToPatient(rows[0] as PatientRow));
 }
 
-async function remove(id: string) {
+async function remove(callerUserId: string, id: string) {
   const db = await getDb();
   const [result] = await db.query<ResultSetHeader>(
-    "DELETE FROM patients WHERE id = ?",
-    [id],
+    "DELETE FROM patients WHERE id = ? AND created_by = ?",
+    [id, callerUserId],
   );
   if (result.affectedRows === 0) return notFound("Patient");
   return noContent();
