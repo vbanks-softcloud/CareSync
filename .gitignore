@@ -20,7 +20,7 @@ build
 .output
 .vinxi
 .nitro
-.tanstack/**
+.tanstack/
 .vite/
 
 # Wrangler / Cloudflare (legacy, kept until S3 migration completes)
