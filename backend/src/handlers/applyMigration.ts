@@ -25,6 +25,8 @@ import schema003 from "../../../database/schemas/003_add_per_field_edit_timestam
 import schema004 from "../../../database/schemas/004_add_miscellaneous_notes.sql";
 // @ts-expect-error — esbuild text loader bundles the SQL file as a string.
 import schema005 from "../../../database/schemas/005_add_birthdate_and_gender_to_patients.sql";
+// @ts-expect-error — esbuild text loader bundles the SQL file as a string.
+import schema006 from "../../../database/schemas/006_patient_demographics_and_location.sql";
 
 // Add new entries here as you add new migration files. The key is what the
 // caller passes in `event.file`; the value is the embedded SQL string.
@@ -34,6 +36,7 @@ const MIGRATIONS: Record<string, string> = {
   "003_add_per_field_edit_timestamps.sql": schema003 as string,
   "004_add_miscellaneous_notes.sql": schema004 as string,
   "005_add_birthdate_and_gender_to_patients.sql": schema005 as string,
+  "006_patient_demographics_and_location.sql": schema006 as string,
 };
 
 export type ApplyMigrationEvent = {

@@ -40,18 +40,44 @@ export type StructuredNote = {
 };
 
 // Field names mirror the `patients` columns in
-// database/schemas/001_initial_mysql_schema.sql and /api/patients responses.
-// `conditionSummary` maps to the SQL `condition_summary` column.
+// database/schemas/001_initial_mysql_schema.sql + later migrations and the
+// /api/patients responses.
+//
+// Schema evolution (migration 006): the form now collects first/last name
+// separately, birthdate as the source of truth for age, and a location
+// type (home vs clinic) with type-specific sub-fields. The legacy `name`,
+// `age`, and `room` fields are still surfaced for backward compatibility
+// with older rows.
+export type LocationType = "home" | "clinic";
+
 export type Patient = {
   id: string;
+  /** Display name. For records created post-migration-006 this is
+   * `firstName + " " + lastName`; older rows have whatever the legacy
+   * single-name form collected. */
   name: string;
+  firstName: string | null;
+  lastName: string | null;
+  /** Derived from birthdate on write. Still surfaced because legacy rows
+   * may have age but no birthdate. */
   age: number;
+  /** Legacy free-form room text. New writes leave this null; reads still
+   * expose it so any old data remains visible. */
   room: string | null;
   conditionSummary: string | null;
-  /** ISO date string YYYY-MM-DD, or null if unknown at intake. */
+  /** ISO date string YYYY-MM-DD, or null for legacy rows that pre-date
+   * migration 005. */
   birthdate: string | null;
-  /** Free-form: "Male", "Female", "Other", "Prefer not to say", or null. */
+  /** Free-form ("Female", "Male", "Non-binary", "Other", "Prefer not to
+   * say", ...). */
   gender: string | null;
+  locationType: LocationType | null;
+  /** Set when locationType === "home". */
+  homeAddress: string | null;
+  /** Set when locationType === "clinic". */
+  clinicName: string | null;
+  /** Set when locationType === "clinic". */
+  clinicAddress: string | null;
   createdBy: string | null;
   /** ISO-8601 timestamps. */
   createdAt: string;
@@ -90,14 +116,21 @@ export async function listPatients(): Promise<Patient[]> {
   return res.patients;
 }
 
+// What the Add Patient form submits. The backend treats firstName,
+// lastName, birthdate, and conditionSummary as required; everything else
+// is optional. `name` and `age` are intentionally absent — they're derived
+// server-side from first/last and birthdate respectively.
 export type NewPatient = {
-  name: string;
-  age: number;
-  room?: string;
-  conditionSummary?: string;
-  /** YYYY-MM-DD. */
-  birthdate?: string;
+  firstName: string;
+  lastName: string;
+  /** YYYY-MM-DD. Required. */
+  birthdate: string;
+  conditionSummary: string;
   gender?: string;
+  locationType?: LocationType;
+  homeAddress?: string;
+  clinicName?: string;
+  clinicAddress?: string;
 };
 
 export async function createPatient(patient: NewPatient): Promise<Patient> {

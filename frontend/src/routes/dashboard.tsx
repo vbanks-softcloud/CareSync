@@ -5,10 +5,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -74,10 +75,17 @@ type PatientSort = "recent" | "oldest" | "name-asc" | "name-desc" | "age-young" 
 type NoteSort = "newest" | "oldest";
 type NotesScope = "patient" | "all";
 
-// A note as rendered in the history list. patientName is only set when the
-// user is in the cross-patient "all notes" view; in the single-patient view
-// the column header already shows whose notes these are.
-type DisplayNote = Note & { patientName?: string };
+// A note as rendered in the history list. The patient-* fields are
+// attached at open time so the NoteDetailDialog can show demographics in
+// its header without doing its own lookup. In the single-patient history
+// view we set them from `selected`; in the cross-patient "all notes" view
+// the aggregator attaches them per row.
+type DisplayNote = Note & {
+  patientName?: string;
+  patientAge?: number;
+  patientGender?: string | null;
+  patientBirthdate?: string | null;
+};
 
 const PATIENT_SORT_LABELS: Record<PatientSort, string> = {
   recent: "Recently added",
@@ -214,7 +222,13 @@ function Dashboard() {
         const perPatient = await Promise.all(
           patients.map(async (p) => {
             const list = await listNotes(p.id);
-            return list.map<DisplayNote>((n) => ({ ...n, patientName: p.name }));
+            return list.map<DisplayNote>((n) => ({
+              ...n,
+              patientName: p.name,
+              patientAge: p.age,
+              patientGender: p.gender,
+              patientBirthdate: p.birthdate,
+            }));
           }),
         );
         if (cancelled) return;
@@ -370,25 +384,24 @@ function Dashboard() {
             <Stethoscope className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate font-display text-sm font-semibold leading-tight sm:text-base">
-              CareSync
+            <div className="flex items-baseline gap-2 truncate font-display text-sm leading-tight sm:text-base">
+              <span className="font-semibold">CareSync</span>
+              {/* Tagline lives inline with the brand. Hidden below `sm` so
+                  it doesn't crowd the header on phones, where the
+                  displayName subline already conveys context. */}
+              <span className="hidden truncate text-xs font-medium italic text-muted-foreground sm:inline sm:text-sm">
+                Voice notes that cares
+              </span>
             </div>
             <div className="truncate text-[11px] text-muted-foreground sm:text-xs">
               {displayName}
             </div>
           </div>
 
-          {/* Mobile patient switcher */}
+          {/* Mobile patient switcher. Trigger lives down by the tabs (see
+              the two-button row below the patient header), so up here we
+              only render the controlled <Sheet> itself. */}
           <Sheet open={patientSheetOpen} onOpenChange={setPatientSheetOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">
-                <Users className="h-4 w-4" />
-                <span className="hidden xs:inline">Patients</span>
-                <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-[10px]">
-                  {patients.length}
-                </Badge>
-              </Button>
-            </SheetTrigger>
             <SheetContent side="left" className="flex w-[85vw] max-w-sm flex-col p-0">
               <SheetHeader className="border-b px-4 py-3">
                 <SheetTitle>Patients</SheetTitle>
@@ -417,10 +430,10 @@ function Dashboard() {
                     setPatientSheetOpen(false);
                     setShowAdd(true);
                   }}
-                  // Brand primary is a warm rose — for this primary CTA we
-                  // want a more saturated, unmistakable "red" so the user
-                  // notices it at the bottom of the sheet.
-                  className="w-full gap-1.5 bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+                  // Use the brand primary rose so every red CTA across the
+                  // app (sidebar + ADD, mobile action row, active tab pill)
+                  // matches this one.
+                  className="w-full gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   <Plus className="h-4 w-4" /> Add patient
                 </Button>
@@ -452,14 +465,18 @@ function Dashboard() {
         {/* Desktop sidebar */}
         <aside className="hidden space-y-3 lg:block">
           <div className="flex items-center justify-between">
-            <h2 className="font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
               Patients
             </h2>
+            {/* Visual twin of the "PATIENTS" heading: same uppercase /
+                tracking / weight / size, but boxed in the brand red so it
+                reads as the primary CTA on the sidebar. Uses the same
+                `bg-primary` rose as the active Record/Review/History tab
+                pill, so the two red surfaces match across the page. */}
             <Button
               size="sm"
-              variant="ghost"
               onClick={() => setShowAdd(true)}
-              className="h-7 gap-1 px-2"
+              className="h-auto gap-1 rounded-md bg-primary px-2 py-0.5 font-display text-sm font-bold uppercase tracking-wide text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-3.5 w-3.5" /> Add
             </Button>
@@ -511,18 +528,36 @@ function Dashboard() {
                 />
               </div>
 
-              {/* One-tap add-patient affordance for mobile. Desktop already
-                  exposes this through the sidebar's "+ Add" button, so this
-                  row is hidden at lg+. Putting it directly above the tabs
-                  keeps the action in the user's focus without competing
-                  with the patient context above. */}
-              <Button
-                variant="outline"
-                onClick={() => setShowAdd(true)}
-                className="w-full gap-2 lg:hidden"
-              >
-                <Plus className="h-4 w-4" /> Add patient
-              </Button>
+              {/* Patient navigation row — mobile only. Left button opens
+                  the full patient list sheet, right button adds a new
+                  patient. Equal-width so they feel like a paired action
+                  bar above the tabs. Desktop already has these via the
+                  sidebar so the row is hidden at lg+. */}
+              {/* Both buttons use the brand red (`bg-primary`) — same hue
+                  as the desktop sidebar's + ADD button and the active
+                  Record/Review/History tab pill — so the mobile action
+                  row reads as the primary navigation surface. */}
+              <div className="flex gap-2 lg:hidden">
+                <Button
+                  onClick={() => setPatientSheetOpen(true)}
+                  className="flex-1 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Users className="h-4 w-4" />
+                  <span>View all patients</span>
+                  <Badge
+                    variant="secondary"
+                    className="ml-0.5 h-5 bg-primary-foreground/20 px-1.5 text-[10px] text-primary-foreground"
+                  >
+                    {patients.length}
+                  </Badge>
+                </Button>
+                <Button
+                  onClick={() => setShowAdd(true)}
+                  className="flex-1 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Plus className="h-4 w-4" /> Add patient
+                </Button>
+              </div>
 
               {/* Tabbed workflow */}
               <Tabs value={tab} onValueChange={setTab} className="w-full">
@@ -796,18 +831,25 @@ function Dashboard() {
                             note={n}
                             onPatientClick={setEditingPatientId}
                             onOpen={(note) => {
-                              // Always make sure the dialog has a patient
-                              // name to display in its big red header. In
-                              // the cross-patient "All notes" view this is
-                              // already attached. In the single-patient
-                              // view it isn't, so we look it up from the
-                              // currently selected patient.
-                              const withName: DisplayNote = note.patientName
-                                ? note
-                                : selected
-                                  ? { ...note, patientName: selected.name }
-                                  : note;
-                              setOpenNote(withName);
+                              // Always make sure the dialog has the patient
+                              // demographics it needs (name + age + gender)
+                              // for its header. In the cross-patient "All
+                              // notes" view these are already attached by
+                              // the aggregator. In single-patient view we
+                              // look them up from `selected`.
+                              const withDemographics: DisplayNote =
+                                note.patientName !== undefined
+                                  ? note
+                                  : selected
+                                    ? {
+                                        ...note,
+                                        patientName: selected.name,
+                                        patientAge: selected.age,
+                                        patientGender: selected.gender,
+                                        patientBirthdate: selected.birthdate,
+                                      }
+                                    : note;
+                              setOpenNote(withDemographics);
                             }}
                           />
                         ))}
@@ -937,8 +979,8 @@ function PatientList({
           >
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{p.name}</div>
-              <div className="text-xs text-muted-foreground">
-                Age {p.age} · Rm {p.room ?? "—"}
+              <div className="truncate text-xs text-muted-foreground">
+                Age {formatAgeLabel(p.birthdate, p.age)} · {formatPatientLocation(p)}
               </div>
             </div>
             {active && <div className="ml-2 h-2 w-2 shrink-0 rounded-full bg-primary" />}
@@ -1050,8 +1092,8 @@ function NoteFilters({
 function PatientHeader({ patient, noteCount }: { patient: Patient; noteCount: number }) {
   // Prefer the dynamically-computed age when we have a birthdate on file,
   // since the stored `age` was static at intake time and may now be stale.
-  const computedAge = patient.birthdate ? ageFromBirthdate(patient.birthdate) : null;
-  const displayedAge = computedAge ?? patient.age;
+  // formatAgeLabel also handles the under-1 case by switching to months.
+  const ageLabel = formatAgeLabel(patient.birthdate, patient.age);
   return (
     <Card className="flex flex-wrap items-center justify-between gap-3 p-4 sm:gap-4 sm:p-5">
       <div className="flex min-w-0 items-center gap-3 sm:gap-4">
@@ -1069,7 +1111,7 @@ function PatientHeader({ patient, noteCount }: { patient: Patient; noteCount: nu
               </Badge>
             )}
             <Badge variant="secondary" className="text-[10px] sm:text-xs">
-              {displayedAge} yrs
+              {ageLabel}
             </Badge>
             {patient.gender && (
               <Badge variant="secondary" className="text-[10px] sm:text-xs">
@@ -1078,7 +1120,7 @@ function PatientHeader({ patient, noteCount }: { patient: Patient; noteCount: nu
             )}
           </div>
           <p className="mt-1 truncate text-xs text-muted-foreground sm:text-sm">
-            Rm {patient.room ?? "—"} · {patient.conditionSummary ?? "General care"}
+            {formatPatientLocation(patient)} · {patient.conditionSummary ?? "General care"}
           </p>
         </div>
       </div>
@@ -1087,6 +1129,63 @@ function PatientHeader({ patient, noteCount }: { patient: Patient; noteCount: nu
       </Badge>
     </Card>
   );
+}
+
+// Display-formatted age: pluralized "yrs" for everyone 1+ year old, but
+// switches to whole-month resolution for infants so a 5-month-old reads
+// "5 months" instead of the uselessly-flat "0 yrs". Pass a birthdate when
+// you have one (gives a months breakdown for infants); pass fallbackYears
+// for legacy rows that only have the static `age` column.
+function formatAgeLabel(birthdate: string | null, fallbackYears: number | null): string {
+  if (birthdate && /^\d{4}-\d{2}-\d{2}$/.test(birthdate)) {
+    const years = ageFromBirthdate(birthdate);
+    if (years !== null && years >= 1) {
+      return `${years} ${years === 1 ? "yr" : "yrs"}`;
+    }
+    const months = monthsFromBirthdate(birthdate);
+    if (months !== null) {
+      if (months <= 0) return "Newborn";
+      return `${months} ${months === 1 ? "month" : "months"}`;
+    }
+  }
+  if (fallbackYears !== null && fallbackYears !== undefined) {
+    return `${fallbackYears} ${fallbackYears === 1 ? "yr" : "yrs"}`;
+  }
+  return "—";
+}
+
+// Whole-month age from a YYYY-MM-DD birthdate. Like ageFromBirthdate but
+// counts months rather than years, so a baby born 5 months and 3 days ago
+// returns 5 (not 6). Uses the local clock so the "has the day-of-month
+// passed?" check matches the user's calendar.
+function monthsFromBirthdate(iso: string): number | null {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const now = new Date();
+  let months = (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m);
+  if (now.getDate() < d) months -= 1;
+  return Math.max(0, months);
+}
+
+// Short one-line summary of where this patient lives. Used in the header
+// strip under their name. Prefers the new location_type-aware fields, but
+// falls back to the legacy `room` text so pre-migration-006 rows still
+// render something useful.
+function formatPatientLocation(patient: Patient): string {
+  if (patient.locationType === "clinic") {
+    if (patient.clinicName) return patient.clinicName;
+    return "Clinic";
+  }
+  if (patient.locationType === "home") {
+    if (patient.homeAddress) {
+      // The first line of the address is usually the most identifying
+      // bit — truncate by line break, the full text is visible on edit.
+      return patient.homeAddress.split(/\r?\n/)[0] ?? "Home";
+    }
+    return "Home";
+  }
+  if (patient.room) return `Rm ${patient.room}`;
+  return "—";
 }
 
 // Formats a YYYY-MM-DD birthdate as "MMM D, YYYY" without falling into the
@@ -1167,10 +1266,8 @@ function Field({
   placeholder?: string;
 }) {
   return (
-    <div>
-      <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </Label>
+    <FieldCard>
+      <FieldLabel>{label}</FieldLabel>
       <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -1180,8 +1277,30 @@ function Field({
         autoCorrect="on"
         spellCheck
         placeholder={placeholder}
-        className="min-h-[64px] resize-none text-sm"
+        className="min-h-[64px] resize-none border-foreground/20 bg-background text-sm shadow-inner"
       />
+    </FieldCard>
+  );
+}
+
+/** Bordered card that wraps an entire editable field (label + input).
+ * Gives edit-mode the same boxed-section feel that view-mode has via
+ * DetailBlock pills, so the user reads each field as its own panel. */
+function FieldCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-foreground/15 bg-card p-3 shadow-sm sm:p-4">
+      {children}
+    </div>
+  );
+}
+
+/** Brand-tinted pill label used by edit-mode fields. Matches the section
+ * pill in DetailBlock so view and edit modes share the same heading
+ * language. */
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 inline-flex items-center rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1 font-display text-sm font-bold uppercase tracking-wide text-primary shadow-sm sm:text-base">
+      {children}
     </div>
   );
 }
@@ -1209,11 +1328,9 @@ function FollowUpField({
   };
 
   return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <Label className="block text-xs uppercase tracking-wide text-muted-foreground">
-          Follow-up needed
-        </Label>
+    <FieldCard>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <FieldLabel>Follow-up needed</FieldLabel>
         <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
           <span className={enabled ? "text-muted-foreground" : "text-foreground"}>No</span>
           <Switch checked={enabled} onCheckedChange={handleToggle} />
@@ -1228,12 +1345,38 @@ function FollowUpField({
           autoCapitalize="sentences"
           autoCorrect="on"
           spellCheck
-          className="min-h-[64px] resize-none text-sm"
+          className="min-h-[64px] resize-none border-foreground/20 bg-background text-sm shadow-inner"
           autoFocus={value === ""}
         />
       )}
-    </div>
+    </FieldCard>
   );
+}
+
+// Returns the ISO timestamp of the most recent edit to this note, or null
+// if the note has never been edited since creation. "Edited" means any
+// per-field *_edited_at column is set (migrations 003 + 004); we fall back
+// to the row-level updated_at when it's meaningfully newer than created_at
+// to catch rows that were modified before per-field stamps existed (the
+// 2-second window absorbs the tiny clock skew mysql can introduce between
+// inserting the row and the trailing ON UPDATE CURRENT_TIMESTAMP firing).
+function latestEditedAt(note: Note): string | null {
+  const perField = [
+    note.transcriptEditedAt,
+    note.patientConcernEditedAt,
+    note.careProvidedEditedAt,
+    note.patientStatusEditedAt,
+    note.followUpNeededEditedAt,
+    note.miscellaneousNotesEditedAt,
+  ].filter((s): s is string => Boolean(s));
+  if (perField.length > 0) {
+    // ISO strings sort lexicographically the same as chronologically.
+    return perField.sort()[perField.length - 1];
+  }
+  const updated = new Date(note.updatedAt).getTime();
+  const created = new Date(note.createdAt).getTime();
+  if (updated - created > 2000) return note.updatedAt;
+  return null;
 }
 
 function NoteRow({
@@ -1249,7 +1392,14 @@ function NoteRow({
   // Opens the full-screen NoteDetailDialog for this note.
   onOpen?: (note: DisplayNote) => void;
 }) {
-  const date = new Date(note.createdAt);
+  // The row's primary timestamp is the most recent activity for this
+  // note — its creation time, or the latest per-field edit if the note
+  // has been touched since. The badge to the right labels that
+  // timestamp ("Recently saved" vs "Recently edited") so a quick glance
+  // distinguishes brand-new notes from ones the user has revisited.
+  const editStamp = latestEditedAt(note);
+  const wasEdited = Boolean(editStamp);
+  const date = new Date(editStamp ?? note.createdAt);
   return (
     <button
       type="button"
@@ -1290,8 +1440,16 @@ function NoteRow({
           {date.toLocaleDateString()} ·{" "}
           {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
-        <Badge variant="secondary" className="text-[10px]">
-          Saved
+        {/* Edited notes get a primary-tinted badge so they pop out from
+            brand-new ones at a glance. */}
+        <Badge
+          variant="secondary"
+          className={cn(
+            "text-[10px]",
+            wasEdited && "bg-primary/10 text-primary",
+          )}
+        >
+          {wasEdited ? "Recently edited" : "Newly created"}
         </Badge>
       </div>
       <div className="grid gap-2 text-sm sm:grid-cols-2">
@@ -1315,6 +1473,118 @@ function Bit({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * Add / Edit patient form contract.
+ *
+ * Required fields (enforced both client- and server-side):
+ *   - First name, last name
+ *   - Birthdate (age is derived from this and never user-editable)
+ *   - Condition
+ *
+ * Optional:
+ *   - Gender (inclusive option list)
+ *   - Location: a toggle between "home" (collects an address) and "clinic"
+ *     (collects clinic name + clinic address). If the user picks neither,
+ *     we just persist locationType=null.
+ *
+ * Add and Edit share the same field layout via PatientFormFields below, so
+ * the only divergence is the initial state, the submit handler, and the
+ * heading/button text.
+ */
+
+type PatientFormState = {
+  firstName: string;
+  lastName: string;
+  birthdate: string;
+  gender: string;
+  locationType: "home" | "clinic" | "";
+  homeAddress: string;
+  clinicName: string;
+  clinicAddress: string;
+  condition: string;
+};
+
+const EMPTY_PATIENT_FORM: PatientFormState = {
+  firstName: "",
+  lastName: "",
+  birthdate: "",
+  gender: "",
+  locationType: "",
+  homeAddress: "",
+  clinicName: "",
+  clinicAddress: "",
+  condition: "",
+};
+
+// Best-effort split of a single-string legacy name into first + last. Old
+// rows store the whole name in `name`; new rows have first_name + last_name
+// columns. For "John Smith" → { first: "John", last: "Smith" }; for
+// "Madonna" or "" → { first, last: "" } so the user can fill in the rest.
+function splitLegacyName(name: string): { first: string; last: string } {
+  const trimmed = name.trim();
+  if (!trimmed) return { first: "", last: "" };
+  const idx = trimmed.indexOf(" ");
+  if (idx === -1) return { first: trimmed, last: "" };
+  return { first: trimmed.slice(0, idx), last: trimmed.slice(idx + 1).trim() };
+}
+
+function patientToFormState(patient: Patient): PatientFormState {
+  const fallback = splitLegacyName(patient.name);
+  return {
+    firstName: patient.firstName ?? fallback.first,
+    lastName: patient.lastName ?? fallback.last,
+    birthdate: patient.birthdate ?? "",
+    gender: patient.gender ?? "",
+    locationType: patient.locationType ?? "",
+    homeAddress: patient.homeAddress ?? "",
+    clinicName: patient.clinicName ?? "",
+    clinicAddress: patient.clinicAddress ?? "",
+    condition: patient.conditionSummary ?? "",
+  };
+}
+
+// Turn the form state into the API payload. Strips empty optional fields
+// and only includes the sub-fields that match the chosen locationType so
+// we don't accidentally persist clinic info on a patient at home.
+function formStateToCreatePayload(s: PatientFormState) {
+  const payload: {
+    firstName: string;
+    lastName: string;
+    birthdate: string;
+    conditionSummary: string;
+    gender?: string;
+    locationType?: "home" | "clinic";
+    homeAddress?: string;
+    clinicName?: string;
+    clinicAddress?: string;
+  } = {
+    firstName: s.firstName.trim(),
+    lastName: s.lastName.trim(),
+    birthdate: s.birthdate,
+    conditionSummary: s.condition.trim(),
+  };
+  if (s.gender) payload.gender = s.gender;
+  if (s.locationType === "home") {
+    payload.locationType = "home";
+    if (s.homeAddress.trim()) payload.homeAddress = s.homeAddress.trim();
+  } else if (s.locationType === "clinic") {
+    payload.locationType = "clinic";
+    if (s.clinicName.trim()) payload.clinicName = s.clinicName.trim();
+    if (s.clinicAddress.trim()) payload.clinicAddress = s.clinicAddress.trim();
+  }
+  return payload;
+}
+
+// True only when every required field is present + valid. The submit
+// button is wired to this so the user can't fire a doomed request.
+function isPatientFormValid(s: PatientFormState): boolean {
+  if (!s.firstName.trim()) return false;
+  if (!s.lastName.trim()) return false;
+  if (!s.birthdate || !/^\d{4}-\d{2}-\d{2}$/.test(s.birthdate)) return false;
+  if (!s.condition.trim()) return false;
+  return true;
+}
+
 function AddPatientDialog({
   onClose,
   onAdded,
@@ -1322,41 +1592,17 @@ function AddPatientDialog({
   onClose: () => void;
   onAdded: (p: Patient) => void;
 }) {
-  const [name, setName] = useState("");
-  const [age, setAge] = useState("");
-  const [room, setRoom] = useState("");
-  const [condition, setCondition] = useState("");
-  const [birthdate, setBirthdate] = useState("");
-  const [gender, setGender] = useState("");
+  const [state, setState] = useState<PatientFormState>(EMPTY_PATIENT_FORM);
   const [submitting, setSubmitting] = useState(false);
 
-  // When the user types a birthdate, pre-fill the age field with the
-  // computed value (they can still override it for ages without a known
-  // birthdate). We only do this while age is empty so we never stomp on a
-  // value the user already typed.
-  const handleBirthdateChange = (v: string) => {
-    setBirthdate(v);
-    if (v && !age) {
-      const computed = ageFromBirthdate(v);
-      if (computed !== null && computed >= 0 && computed <= 130) {
-        setAge(String(computed));
-      }
-    }
-  };
+  const valid = isPatientFormValid(state);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !age) return;
+    if (!valid) return;
     setSubmitting(true);
     try {
-      const p = await createPatient({
-        name,
-        age: Number(age),
-        room: room || undefined,
-        conditionSummary: condition || undefined,
-        birthdate: birthdate || undefined,
-        gender: gender || undefined,
-      });
+      const p = await createPatient(formStateToCreatePayload(state));
       onAdded(p);
     } catch (err) {
       toast.error("Couldn't add patient", { description: describeApiError(err) });
@@ -1366,64 +1612,114 @@ function AddPatientDialog({
   };
 
   return (
+    <PatientFormShell
+      title="Add patient"
+      onClose={onClose}
+      onSubmit={submit}
+      submitting={submitting}
+      submitLabel={submitting ? "Adding…" : "Add patient"}
+      canSubmit={valid}
+    >
+      <PatientFormFields state={state} onChange={setState} idPrefix="add" />
+    </PatientFormShell>
+  );
+}
+
+function EditPatientDialog({
+  patient,
+  onClose,
+  onSaved,
+}: {
+  patient: Patient;
+  onClose: () => void;
+  onSaved: (p: Patient) => void;
+}) {
+  const [state, setState] = useState<PatientFormState>(() => patientToFormState(patient));
+  const [submitting, setSubmitting] = useState(false);
+
+  const valid = isPatientFormValid(state);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    setSubmitting(true);
+    try {
+      // Always send first/last/condition/birthdate. Send gender + location
+      // as empty strings (the backend interprets that as "clear the
+      // column") so the user can also remove a previously stored value.
+      const payload = formStateToCreatePayload(state);
+      const updated = await updatePatient(patient.id, {
+        ...payload,
+        // Force-include optional fields so clearing them works as expected.
+        gender: state.gender,
+        locationType: state.locationType || undefined,
+        homeAddress: state.locationType === "home" ? state.homeAddress : "",
+        clinicName: state.locationType === "clinic" ? state.clinicName : "",
+        clinicAddress: state.locationType === "clinic" ? state.clinicAddress : "",
+      });
+      onSaved(updated);
+      toast.success("Patient updated");
+    } catch (err) {
+      toast.error("Couldn't update patient", { description: describeApiError(err) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <PatientFormShell
+      title="Edit patient"
+      onClose={onClose}
+      onSubmit={submit}
+      submitting={submitting}
+      submitLabel={submitting ? "Saving…" : "Save changes"}
+      canSubmit={valid}
+    >
+      <PatientFormFields state={state} onChange={setState} idPrefix="edit" />
+    </PatientFormShell>
+  );
+}
+
+// Shared modal chrome: backdrop, scrollable card, header, footer actions.
+// The form itself lives in the children. We let the card grow up to ~95vh
+// and scroll inside so a long form (especially with the clinic branch) is
+// still usable on small screens.
+function PatientFormShell({
+  title,
+  onClose,
+  onSubmit,
+  submitting,
+  submitLabel,
+  canSubmit,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  onSubmit: (e: React.FormEvent) => void;
+  submitting: boolean;
+  submitLabel: string;
+  canSubmit: boolean;
+  children: React.ReactNode;
+}) {
+  return (
     <div
       className="fixed inset-0 z-30 flex items-end justify-center bg-foreground/30 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <Card
-        className="w-full max-w-md rounded-b-none rounded-t-2xl p-6 shadow-clinical sm:rounded-2xl"
+        className="flex max-h-[95vh] w-full max-w-md flex-col rounded-b-none rounded-t-2xl p-0 shadow-clinical sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 font-display text-xl font-semibold">Add patient</h2>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="n">Name</Label>
-            <Input id="n" required value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="dob">Birthdate</Label>
-              <Input
-                id="dob"
-                type="date"
-                value={birthdate}
-                max={new Date().toISOString().slice(0, 10)}
-                min="1900-01-01"
-                onChange={(e) => handleBirthdateChange(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="a">Age</Label>
-              <Input
-                id="a"
-                type="number"
-                required
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="g">Gender</Label>
-              <GenderSelect value={gender} onChange={setGender} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="r">Room</Label>
-              <Input id="r" value={room} onChange={(e) => setRoom(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="c">Condition</Label>
-            <Input id="c" value={condition} onChange={(e) => setCondition(e.target.value)} />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
+        <h2 className="border-b px-6 pb-3 pt-5 font-display text-xl font-semibold">{title}</h2>
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">{children}</div>
+          <div className="flex justify-end gap-2 border-t bg-card/95 px-6 py-3">
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting} className="gap-2">
+            <Button type="submit" disabled={submitting || !canSubmit} className="gap-2">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? "Adding…" : "Add patient"}
+              {submitLabel}
             </Button>
           </div>
         </form>
@@ -1432,11 +1728,186 @@ function AddPatientDialog({
   );
 }
 
-// Tiny gender picker — single source of truth for the option list, used by
-// both AddPatientDialog and EditPatientDialog. Free text lives in the DB
-// (VARCHAR), but the form constrains intake to a small known set so we
-// don't end up with "Male", "male", "M", "Male." all in the same column.
-const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"] as const;
+// The actual form. Shared between Add and Edit so the field set + layout
+// can't drift between the two. The idPrefix prevents <label htmlFor>
+// collisions when (hypothetically) both dialogs are rendered on the same
+// page at once.
+function PatientFormFields({
+  state,
+  onChange,
+  idPrefix,
+}: {
+  state: PatientFormState;
+  onChange: (next: PatientFormState) => void;
+  idPrefix: string;
+}) {
+  // Display-formatted age label for the read-only pill. Switches to a
+  // months-resolution string for infants under 1 year old.
+  const computedAgeLabel = state.birthdate ? formatAgeLabel(state.birthdate, null) : null;
+
+  // Each setter funnels through the parent's onChange so the form's
+  // valid/invalid state stays in sync with the displayed values.
+  const set = <K extends keyof PatientFormState>(key: K, value: PatientFormState[K]) => {
+    onChange({ ...state, [key]: value });
+  };
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-fn`}>First name *</Label>
+          <Input
+            id={`${idPrefix}-fn`}
+            required
+            value={state.firstName}
+            onChange={(e) => set("firstName", e.target.value)}
+            autoCapitalize="words"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-ln`}>Last name *</Label>
+          <Input
+            id={`${idPrefix}-ln`}
+            required
+            value={state.lastName}
+            onChange={(e) => set("lastName", e.target.value)}
+            autoCapitalize="words"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-dob`}>Birthdate *</Label>
+          <Input
+            id={`${idPrefix}-dob`}
+            type="date"
+            required
+            value={state.birthdate}
+            max={new Date().toISOString().slice(0, 10)}
+            min="1900-01-01"
+            onChange={(e) => set("birthdate", e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-age`}>Age</Label>
+          {/* Read-only — derived from birthdate. We render it as a styled
+              div rather than a disabled input so it doesn't look like
+              something the user can interact with. */}
+          <div
+            id={`${idPrefix}-age`}
+            aria-readonly
+            className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
+          >
+            {computedAgeLabel ?? "—"}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idPrefix}-gender`}>Gender</Label>
+        <GenderSelect value={state.gender} onChange={(v) => set("gender", v)} />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Where do they live?</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              { id: "home", label: "House / Apt" },
+              { id: "clinic", label: "Clinic room" },
+            ] as const
+          ).map((opt) => {
+            const active = state.locationType === opt.id;
+            return (
+              <button
+                type="button"
+                key={opt.id}
+                onClick={() => set("locationType", active ? "" : opt.id)}
+                aria-pressed={active}
+                className={cn(
+                  "rounded-md border px-3 py-2 text-sm font-medium transition",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-input bg-card text-foreground hover:bg-muted",
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {state.locationType === "home" && (
+          <div className="space-y-1.5 pt-1">
+            <Label htmlFor={`${idPrefix}-home-addr`}>Address</Label>
+            <Textarea
+              id={`${idPrefix}-home-addr`}
+              rows={2}
+              value={state.homeAddress}
+              onChange={(e) => set("homeAddress", e.target.value)}
+              placeholder="123 Main St, Apt 4B, Springfield, IL 62704"
+              autoCapitalize="words"
+            />
+          </div>
+        )}
+
+        {state.locationType === "clinic" && (
+          <div className="space-y-3 pt-1">
+            <div className="space-y-1.5">
+              <Label htmlFor={`${idPrefix}-clinic-name`}>Clinic name</Label>
+              <Input
+                id={`${idPrefix}-clinic-name`}
+                value={state.clinicName}
+                onChange={(e) => set("clinicName", e.target.value)}
+                placeholder="Springfield Memorial Care"
+                autoCapitalize="words"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`${idPrefix}-clinic-addr`}>Clinic address</Label>
+              <Textarea
+                id={`${idPrefix}-clinic-addr`}
+                rows={2}
+                value={state.clinicAddress}
+                onChange={(e) => set("clinicAddress", e.target.value)}
+                placeholder="456 Hospital Way, Springfield, IL 62701"
+                autoCapitalize="words"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idPrefix}-cond`}>Condition *</Label>
+        <Textarea
+          id={`${idPrefix}-cond`}
+          required
+          rows={2}
+          value={state.condition}
+          onChange={(e) => set("condition", e.target.value)}
+          placeholder="e.g. Post-op recovery, type 2 diabetes, hypertension"
+          autoCapitalize="sentences"
+        />
+      </div>
+    </>
+  );
+}
+
+// Inclusive gender picker — single source of truth for the option list,
+// used by both AddPatientDialog and EditPatientDialog. The DB column is
+// VARCHAR so callers can add new options here without a migration, and
+// any free-form value typed by an older client still round-trips.
+const GENDER_OPTIONS = [
+  "Female",
+  "Male",
+  "Non-binary",
+  "Transgender female",
+  "Transgender male",
+  "Other",
+  "Prefer not to say",
+] as const;
 
 function GenderSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -1452,127 +1923,6 @@ function GenderSelect({ value, onChange }: { value: string; onChange: (v: string
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-function EditPatientDialog({
-  patient,
-  onClose,
-  onSaved,
-}: {
-  patient: Patient;
-  onClose: () => void;
-  onSaved: (p: Patient) => void;
-}) {
-  const [name, setName] = useState(patient.name);
-  const [age, setAge] = useState(String(patient.age));
-  const [room, setRoom] = useState(patient.room ?? "");
-  const [condition, setCondition] = useState(patient.conditionSummary ?? "");
-  const [birthdate, setBirthdate] = useState(patient.birthdate ?? "");
-  const [gender, setGender] = useState(patient.gender ?? "");
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleBirthdateChange = (v: string) => {
-    setBirthdate(v);
-    // Auto-sync age to whatever the new birthdate implies. We always run
-    // this on edit (not just when age is empty like in AddPatient) because
-    // here the user is actively reconciling stored demographics.
-    if (v) {
-      const computed = ageFromBirthdate(v);
-      if (computed !== null && computed >= 0 && computed <= 130) {
-        setAge(String(computed));
-      }
-    }
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name || !age) return;
-    setSubmitting(true);
-    try {
-      // Send every field — the backend handles partial updates, but sending
-      // the full set is simpler than diffing and is still tiny on the wire.
-      const updated = await updatePatient(patient.id, {
-        name,
-        age: Number(age),
-        room: room || undefined,
-        conditionSummary: condition || undefined,
-        birthdate: birthdate || undefined,
-        gender: gender || undefined,
-      });
-      onSaved(updated);
-      toast.success("Patient updated");
-    } catch (err) {
-      toast.error("Couldn't update patient", { description: describeApiError(err) });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-30 flex items-end justify-center bg-foreground/30 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={onClose}
-    >
-      <Card
-        className="w-full max-w-md rounded-b-none rounded-t-2xl p-6 shadow-clinical sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="mb-4 font-display text-xl font-semibold">Edit patient</h2>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-n">Name</Label>
-            <Input id="edit-n" required value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-dob">Birthdate</Label>
-              <Input
-                id="edit-dob"
-                type="date"
-                value={birthdate}
-                max={new Date().toISOString().slice(0, 10)}
-                min="1900-01-01"
-                onChange={(e) => handleBirthdateChange(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-a">Age</Label>
-              <Input
-                id="edit-a"
-                type="number"
-                required
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-g">Gender</Label>
-              <GenderSelect value={gender} onChange={setGender} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-r">Room</Label>
-              <Input id="edit-r" value={room} onChange={(e) => setRoom(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-c">Condition</Label>
-            <Input id="edit-c" value={condition} onChange={(e) => setCondition(e.target.value)} />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting} className="gap-2">
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-    </div>
   );
 }
 
@@ -1609,29 +1959,9 @@ function NoteDetailDialog({
     minute: "2-digit",
   })}`;
 
-  // Source of truth for "has this note ever been edited?" is the per-field
-  // *_edited_at columns (migrations 003 + 004). The most recent of those
-  // is what we display in the top banner. We fall back to the whole-row
-  // updated_at if for some reason none of the per-field columns are set
-  // but updated_at is meaningfully newer than created_at — that case
-  // covers rows edited before migration 003 landed.
-  const perFieldStamps = [
-    note.transcriptEditedAt,
-    note.patientConcernEditedAt,
-    note.careProvidedEditedAt,
-    note.patientStatusEditedAt,
-    note.followUpNeededEditedAt,
-    note.miscellaneousNotesEditedAt,
-  ].filter((s): s is string => Boolean(s));
-
-  let editedIso: string | null = null;
-  if (perFieldStamps.length > 0) {
-    // ISO strings sort lexicographically the same as chronologically.
-    editedIso = perFieldStamps.sort()[perFieldStamps.length - 1];
-  } else if (new Date(note.updatedAt).getTime() - createdDate.getTime() > 2000) {
-    editedIso = note.updatedAt;
-  }
-
+  // Use the shared helper so NoteRow and NoteDetailDialog can't disagree
+  // about whether a given note counts as "edited".
+  const editedIso = latestEditedAt(note);
   const wasEdited = editedIso !== null;
   const formattedUpdated = editedIso
     ? (() => {
@@ -1701,32 +2031,59 @@ function NoteDetailDialog({
         aria-modal="true"
         aria-label="Note details"
       >
-        {/* Last-edited banner — sits at the very top of the dialog so the
-            user immediately knows the note has been modified since it was
-            first recorded. Hidden when the note has never been edited. */}
-        {wasEdited && (
-          <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 sm:px-6 sm:text-base">
-            <Pencil className="h-4 w-4 shrink-0" />
-            <span>
-              Last edited <span className="font-semibold">{formattedUpdated}</span>
-            </span>
-          </div>
-        )}
-
-        {/* Header — title on the left, edit + close icons on the right. */}
+        {/* Header — title on the left, edit + close icons on the right.
+            The "Last edited" line lives directly under "Created" so both
+            timestamps for the whole note read together. */}
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3 sm:px-6 sm:py-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             {note.patientName && (
-              <div className="mb-1 flex items-center gap-2 font-display text-xl font-bold text-primary sm:text-2xl">
-                <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
-                {note.patientName}
+              <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <div className="flex items-center gap-2 font-display text-2xl font-bold text-primary sm:text-3xl">
+                  <HeartPulse className="h-6 w-6 sm:h-7 sm:w-7" />
+                  {note.patientName}
+                </div>
+                {/* Demographics live to the right of the name on wide
+                    screens and wrap below it on narrow ones. Order matches
+                    EHR-banner convention (Epic / Cerner): DOB → Age →
+                    Gender. DOB sits right after the name because it's the
+                    secondary identifier that disambiguates same-name
+                    patients; age is its contextual derivative; gender
+                    closes the demographic strip. */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {note.patientBirthdate && (
+                    <Badge variant="secondary" className="font-mono text-xs sm:text-sm">
+                      {formatBirthdate(note.patientBirthdate)}
+                    </Badge>
+                  )}
+                  {(note.patientBirthdate || typeof note.patientAge === "number") && (
+                    <Badge variant="secondary" className="text-xs sm:text-sm">
+                      {formatAgeLabel(
+                        note.patientBirthdate ?? null,
+                        typeof note.patientAge === "number" ? note.patientAge : null,
+                      )}
+                    </Badge>
+                  )}
+                  {note.patientGender && (
+                    <Badge variant="secondary" className="text-xs sm:text-sm">
+                      {note.patientGender}
+                    </Badge>
+                  )}
+                </div>
               </div>
             )}
             <p className="text-xs text-muted-foreground sm:text-sm">
               <span className="font-medium">Created</span> {formattedCreated}
             </p>
+            {wasEdited && (
+              <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs italic text-amber-700 sm:text-sm">
+                <Pencil className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
+                <span>
+                  <span className="not-italic">Last edited</span> {formattedUpdated}
+                </span>
+              </p>
+            )}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             {mode === "view" && (
               <Button
                 variant="ghost"
@@ -1734,9 +2091,9 @@ function NoteDetailDialog({
                 onClick={() => setMode("edit")}
                 aria-label="Edit note"
                 title="Edit note"
-                className="h-9 w-9"
+                className="h-11 w-11 sm:h-12 sm:w-12"
               >
-                <Pencil className="h-4 w-4" />
+                <Pencil className="h-5 w-5 sm:h-6 sm:w-6" />
               </Button>
             )}
             <Button
@@ -1745,9 +2102,9 @@ function NoteDetailDialog({
               onClick={onClose}
               aria-label="Close"
               title="Close"
-              className="h-9 w-9"
+              className="h-11 w-11 sm:h-12 sm:w-12"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5 sm:h-6 sm:w-6" />
             </Button>
           </div>
         </div>
@@ -1795,10 +2152,8 @@ function NoteDetailDialog({
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-note-transcript" className="text-xs uppercase tracking-wide">
-                  Transcript
-                </Label>
+              <FieldCard>
+                <FieldLabel>Transcript</FieldLabel>
                 <Textarea
                   id="edit-note-transcript"
                   value={transcript}
@@ -1807,9 +2162,9 @@ function NoteDetailDialog({
                   autoCorrect="on"
                   spellCheck
                   rows={6}
-                  className="text-sm"
+                  className="border-foreground/20 bg-background text-sm shadow-inner"
                 />
-              </div>
+              </FieldCard>
               <Field
                 label="Patient concern"
                 value={concern}
@@ -1904,11 +2259,12 @@ function DetailBlock({
   editedAt?: string | null;
 }) {
   return (
-    <div>
-      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <div className="font-display text-base font-bold uppercase tracking-wide text-foreground sm:text-lg">
-          {label}
-        </div>
+    <FieldCard>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        {/* Each section title sits in its own pill — a brand-tinted box so
+            the eye can scan section headers at a glance instead of parsing
+            run-on field labels. */}
+        <FieldLabel>{label}</FieldLabel>
         {editedAt && (
           <div className="text-xs italic text-amber-700 sm:text-sm">
             <Pencil className="-mt-0.5 mr-1 inline h-3 w-3" />
@@ -1927,7 +2283,7 @@ function DetailBlock({
       ) : (
         <div className="text-base italic text-muted-foreground sm:text-lg">{emptyText}</div>
       )}
-    </div>
+    </FieldCard>
   );
 }
 
