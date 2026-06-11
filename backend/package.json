@@ -14,6 +14,7 @@
     "deploy:prod": "serverless deploy --stage prod",
     "remove": "serverless remove",
     "lint": "eslint \"src/**/*.{ts,js}\"",
+    "fetch-jwks": "node scripts/fetch-jwks.mjs",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1066.0",
+    "aws-jwt-verify": "^5.2.1",
     "mysql2": "^3.22.5"
   }
 }

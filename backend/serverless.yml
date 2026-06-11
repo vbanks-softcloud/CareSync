@@ -16,6 +16,26 @@ provider:
   stage: ${opt:stage, 'dev'}
   memorySize: 512
   timeout: 10
+  # CORS for the HTTP API. caresync.fyi calls these endpoints from the
+  # browser via the API Gateway origin (different host), so without this
+  # block every request fails the preflight. localhost:5173 is the Vite
+  # dev server origin so developers can hit the deployed API from local.
+  httpApi:
+    cors:
+      allowedOrigins:
+        - https://caresync.fyi
+        - https://www.caresync.fyi
+        - http://localhost:5173
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      maxAge: 600
   environment:
     NODE_ENV: ${self:provider.stage}
     STAGE: ${self:provider.stage}
@@ -29,6 +49,12 @@ provider:
     DB_HOST: ${env:DB_HOST, 'caresync-db.cmf2m8o2079n.us-east-1.rds.amazonaws.com'}
     DB_NAME: caresync
     DB_SECRET_ID: ${env:DB_SECRET_ID, 'arn:aws:secretsmanager:us-east-1:810738286523:secret:rds!db-9eb52667-87ac-4e3f-8835-48c06143f5f4-qYdYRe'}
+    # Cognito user pool the API trusts for JWT verification. Must match the
+    # pool the frontend authenticates against (frontend reads these from
+    # VITE_COGNITO_* GitHub secrets at build time; backend reads them here
+    # at deploy time). If these ever drift the API will 401 every request.
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, 'us-east-1_aIqAshPg1'}
+    COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID, '709do2jdofjreluscm109kgdsp'}
   iam:
     role:
       statements:
