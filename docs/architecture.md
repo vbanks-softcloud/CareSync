@@ -110,19 +110,25 @@ Responsibilities:
 
 ## Voice Recording Storage
 
-Voice recordings are stored in Amazon S3.
 
 Database table:
 
-```text
-voice_recordings
-```
+
 
 Stores:
 
 * S3 bucket name
 * S3 object key
 * Recording metadata
+
+
+ ## Database Security Groups
+
+- RDS Security Group
+- Lambda Security Group
+- EC2 Administrative Security Group
+
+The RDS security group allows MySQL traffic on port 3306 only from approved application resources inside the VPC.
 
 ---
 
