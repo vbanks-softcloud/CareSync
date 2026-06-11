@@ -20,6 +20,7 @@ import {
   signOut as amplifySignOut,
   getCurrentUser as amplifyGetCurrentUser,
   fetchUserAttributes as amplifyFetchUserAttributes,
+  fetchAuthSession as amplifyFetchAuthSession,
   updateUserAttributes as amplifyUpdateUserAttributes,
   resetPassword as amplifyResetPassword,
   confirmResetPassword as amplifyConfirmResetPassword,
@@ -138,6 +139,21 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     const attrs = await amplifyFetchUserAttributes();
     const email = attrs.email ?? "";
     return email ? { email } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns the current Cognito ID token (JWT string) or null if not signed
+ * in. Used by the API client to send `Authorization: Bearer <token>` on
+ * protected requests. Amplify handles silent token refresh under the hood,
+ * so every call returns a fresh valid token without a network round-trip
+ * in the common case. */
+export async function getIdToken(): Promise<string | null> {
+  if (!isCognitoConfigured) return null;
+  try {
+    const session = await amplifyFetchAuthSession();
+    return session.tokens?.idToken?.toString() ?? null;
   } catch {
     return null;
   }

@@ -22,8 +22,8 @@ import {
   HeartPulse,
   ClipboardList,
   Users,
-  Activity,
   FileText,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
@@ -33,16 +33,17 @@ import {
   type StructuredNote,
   type AuthUser,
   type UserProfile,
-  getPatients,
-  addPatient,
-  getNotes,
-  saveNote,
+  listPatients,
+  createPatient,
+  listNotes,
+  createNote,
   structureTranscript,
   getCurrentUser,
   getCachedUserProfile,
   getUserProfile,
   signOut,
 } from "@/lib/caresync-store";
+import { ApiError } from "@/lib/api";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 
 export const Route = createFileRoute("/dashboard")({
@@ -60,6 +61,8 @@ function Dashboard() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [notesLoading, setNotesLoading] = useState(false);
   const [structured, setStructured] = useState<StructuredNote>({
     patientConcern: "",
     careProvided: "",
@@ -72,6 +75,7 @@ function Dashboard() {
   const [auth, setAuth] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [tab, setTab] = useState("record");
+  const [saving, setSaving] = useState(false);
 
   const speech = useSpeechRecognition();
 
@@ -106,17 +110,51 @@ function Dashboard() {
       }
       setAuth(a);
       setProfile(fresh);
-      const p = getPatients();
-      setPatients(p);
-      setSelectedId(p[0]?.id ?? null);
+
+      // Load patients from the API. Empty list is the normal new-account
+      // state; the UI shows an "Add your first patient" empty state.
+      try {
+        const list = await listPatients();
+        if (cancelled) return;
+        setPatients(list);
+        setSelectedId(list[0]?.id ?? null);
+      } catch (err) {
+        if (cancelled) return;
+        toast.error("Couldn't load patients", { description: describeApiError(err) });
+      } finally {
+        if (!cancelled) setPatientsLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [navigate]);
 
+  // Reload notes whenever the selected patient changes. We don't cache
+  // across switches because the list is cheap (indexed query) and we want
+  // fresh data after another caregiver writes a note.
   useEffect(() => {
-    if (selectedId) setNotes(getNotes(selectedId));
+    if (!selectedId) {
+      setNotes([]);
+      return;
+    }
+    let cancelled = false;
+    setNotesLoading(true);
+    (async () => {
+      try {
+        const list = await listNotes(selectedId);
+        if (cancelled) return;
+        setNotes(list);
+      } catch (err) {
+        if (cancelled) return;
+        toast.error("Couldn't load notes", { description: describeApiError(err) });
+      } finally {
+        if (!cancelled) setNotesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId]);
 
   useEffect(() => {
@@ -126,11 +164,6 @@ function Dashboard() {
   const selected = useMemo(
     () => patients.find((p) => p.id === selectedId) ?? null,
     [patients, selectedId],
-  );
-
-  const allNotesCount = useMemo(
-    () => patients.reduce((acc, p) => acc + getNotes(p.id).length, 0),
-    [patients, notes],
   );
 
   const handleStructure = () => {
@@ -144,23 +177,37 @@ function Dashboard() {
     toast.success("Note structured", { description: "Review and edit before saving." });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selected) return;
     if (!editableTranscript.trim()) {
       toast.error("Add a transcript first.");
       return;
     }
-    const note = saveNote({
-      patientId: selected.id,
-      transcript: editableTranscript.trim(),
-      structured,
-    });
-    setNotes([note, ...notes]);
-    setEditableTranscript("");
-    setStructured({ patientConcern: "", careProvided: "", patientStatus: "", followUpNeeded: "" });
-    speech.reset();
-    setTab("history");
-    toast.success("Note saved", { description: "Encrypted and added to patient record." });
+    setSaving(true);
+    try {
+      const note = await createNote(selected.id, {
+        transcript: editableTranscript.trim(),
+        patientConcern: structured.patientConcern,
+        careProvided: structured.careProvided,
+        patientStatus: structured.patientStatus,
+        followUpNeeded: structured.followUpNeeded,
+      });
+      setNotes([note, ...notes]);
+      setEditableTranscript("");
+      setStructured({
+        patientConcern: "",
+        careProvided: "",
+        patientStatus: "",
+        followUpNeeded: "",
+      });
+      speech.reset();
+      setTab("history");
+      toast.success("Note saved", { description: "Encrypted and added to patient record." });
+    } catch (err) {
+      toast.error("Couldn't save note", { description: describeApiError(err) });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -177,9 +224,7 @@ function Dashboard() {
 
   // Prefer the user's actual name once onboarding is done; fall back to email
   // characters so the avatar always has something readable.
-  const displayName = profile
-    ? `${profile.firstName} ${profile.lastName}`.trim()
-    : auth.email;
+  const displayName = profile ? `${profile.firstName} ${profile.lastName}`.trim() : auth.email;
   const initials = profile
     ? `${profile.firstName[0] ?? ""}${profile.lastName[0] ?? ""}`.toUpperCase() ||
       auth.email.slice(0, 2).toUpperCase()
@@ -276,15 +321,21 @@ function Dashboard() {
         </aside>
 
         <main className="space-y-4 sm:space-y-6">
-          {selected ? (
+          {patientsLoading ? (
+            <Card className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading patients…
+            </Card>
+          ) : selected ? (
             <>
               <PatientHeader patient={selected} noteCount={notes.length} />
 
-              {/* Quick stats — mobile-only */}
-              <div className="grid grid-cols-3 gap-2 lg:hidden">
+              {/* Quick stats — mobile-only. We used to show a "Total notes
+                  across all patients" tile, but with the API that needs a
+                  per-patient query each. Dropped until we have a stats
+                  endpoint that aggregates server-side. */}
+              <div className="grid grid-cols-2 gap-2 lg:hidden">
                 <Stat icon={Users} label="Patients" value={patients.length} />
                 <Stat icon={FileText} label="Notes" value={notes.length} />
-                <Stat icon={Activity} label="Total" value={allNotesCount} />
               </div>
 
               {/* Tabbed workflow */}
@@ -425,8 +476,21 @@ function Dashboard() {
                       />
                     </div>
                     <Separator className="my-5" />
-                    <Button onClick={handleSave} className="w-full gap-2" size="lg">
-                      <Save className="h-4 w-4" /> Save note to record
+                    <Button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="w-full gap-2"
+                      size="lg"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" /> Save note to record
+                        </>
+                      )}
                     </Button>
                   </Card>
                 </TabsContent>
@@ -442,7 +506,11 @@ function Dashboard() {
                         {notes.length}
                       </Badge>
                     </div>
-                    {notes.length === 0 ? (
+                    {notesLoading ? (
+                      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading notes…
+                      </div>
+                    ) : notes.length === 0 ? (
                       <p className="py-8 text-center text-sm text-muted-foreground">
                         No notes yet for this patient. Record one above.
                       </p>
@@ -457,9 +525,22 @@ function Dashboard() {
                 </TabsContent>
               </Tabs>
             </>
+          ) : patients.length === 0 ? (
+            <Card className="p-10 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Users className="h-6 w-6" />
+              </div>
+              <h2 className="font-display text-lg font-semibold">No patients yet</h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Add your first patient to start recording care notes.
+              </p>
+              <Button onClick={() => setShowAdd(true)} className="gap-2">
+                <Plus className="h-4 w-4" /> Add patient
+              </Button>
+            </Card>
           ) : (
             <Card className="p-10 text-center text-muted-foreground">
-              Select or add a patient to begin.
+              Select a patient from the sidebar to begin.
             </Card>
           )}
         </main>
@@ -598,16 +679,10 @@ function NoteRow({ note }: { note: Note }) {
         </Badge>
       </div>
       <div className="grid gap-2 text-sm sm:grid-cols-2">
-        {note.structured.patientConcern && (
-          <Bit label="Concern" value={note.structured.patientConcern} />
-        )}
-        {note.structured.careProvided && <Bit label="Care" value={note.structured.careProvided} />}
-        {note.structured.patientStatus && (
-          <Bit label="Status" value={note.structured.patientStatus} />
-        )}
-        {note.structured.followUpNeeded && (
-          <Bit label="Follow-up" value={note.structured.followUpNeeded} />
-        )}
+        {note.patientConcern && <Bit label="Concern" value={note.patientConcern} />}
+        {note.careProvided && <Bit label="Care" value={note.careProvided} />}
+        {note.patientStatus && <Bit label="Status" value={note.patientStatus} />}
+        {note.followUpNeeded && <Bit label="Follow-up" value={note.followUpNeeded} />}
       </div>
     </div>
   );
@@ -635,12 +710,25 @@ function AddPatientDialog({
   const [age, setAge] = useState("");
   const [room, setRoom] = useState("");
   const [condition, setCondition] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !age) return;
-    const p = addPatient({ name, age: Number(age), room, conditionSummary: condition });
-    onAdded(p);
+    setSubmitting(true);
+    try {
+      const p = await createPatient({
+        name,
+        age: Number(age),
+        room: room || undefined,
+        conditionSummary: condition || undefined,
+      });
+      onAdded(p);
+    } catch (err) {
+      toast.error("Couldn't add patient", { description: describeApiError(err) });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -679,13 +767,29 @@ function AddPatientDialog({
             <Input id="c" value={condition} onChange={(e) => setCondition(e.target.value)} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">Add patient</Button>
+            <Button type="submit" disabled={submitting} className="gap-2">
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting ? "Adding…" : "Add patient"}
+            </Button>
           </div>
         </form>
       </Card>
     </div>
   );
+}
+
+/** Pulls a human-readable error message out of an ApiError (or a regular
+ * Error). Used by every toast.error() call in this file. */
+function describeApiError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return "Your session expired — please sign in again.";
+    if (err.status === 403) return "You don't have permission to do that.";
+    if (err.status === 404) return "Not found.";
+    return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return "Unknown error";
 }

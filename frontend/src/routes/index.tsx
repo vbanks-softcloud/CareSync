@@ -641,9 +641,7 @@ function SignInForm({ onDone }: { onDone: () => void }) {
                 strokeWidth={1.75}
                 aria-hidden
               />
-              <p className="text-foreground mt-5 text-base font-semibold">
-                Verifying your email…
-              </p>
+              <p className="text-foreground mt-5 text-base font-semibold">Verifying your email…</p>
               <p className="text-muted-foreground mt-1 text-xs">This will only take a moment.</p>
             </>
           ) : (

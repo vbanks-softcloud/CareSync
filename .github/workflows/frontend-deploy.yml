@@ -43,6 +43,11 @@ jobs:
           VITE_COGNITO_USER_POOL_ID: ${{ secrets.VITE_COGNITO_USER_POOL_ID }}
           VITE_COGNITO_USER_POOL_CLIENT_ID: ${{ secrets.VITE_COGNITO_USER_POOL_CLIENT_ID }}
           VITE_COGNITO_REGION: ${{ secrets.VITE_COGNITO_REGION }}
+          # API Gateway URL for caresync-backend (e.g. https://xyz.execute-api.us-east-1.amazonaws.com).
+          # The dashboard fetches patients/notes from here at runtime. If this
+          # is missing, the dashboard surfaces an "API not configured" error
+          # rather than silently falling back to localStorage.
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm run build:frontend
 
       - name: Configure AWS credentials (OIDC)

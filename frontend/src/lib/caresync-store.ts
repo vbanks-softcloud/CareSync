@@ -1,7 +1,23 @@
 // Field names mirror the `care_notes` columns in
-// database/schemas/001_initial_mysql_schema.sql so the wire format is a
-// straight camelCase ↔ snake_case mapping when we eventually persist
-// these to RDS.
+// database/schemas/001_initial_mysql_schema.sql, which is also exactly what
+// the /api/patients/{id}/notes endpoint returns. No translation layer needed
+// — the wire format IS our type.
+export type Note = {
+  id: string;
+  patientId: string;
+  caregiverId: string | null;
+  transcript: string;
+  patientConcern: string | null;
+  careProvided: string | null;
+  patientStatus: string | null;
+  followUpNeeded: string | null;
+  /** ISO-8601 timestamp. */
+  createdAt: string;
+};
+
+/** Subset of Note fields the user fills in during the review step. Kept
+ * as a separate type because the dashboard's "Review" tab holds these
+ * locally while the user edits, before posting them with the transcript. */
 export type StructuredNote = {
   patientConcern: string;
   careProvided: string;
@@ -9,42 +25,23 @@ export type StructuredNote = {
   followUpNeeded: string;
 };
 
-export type Note = {
-  id: string;
-  patientId: string;
-  createdAt: number;
-  transcript: string;
-  structured: StructuredNote;
-};
-
 // Field names mirror the `patients` columns in
-// database/schemas/001_initial_mysql_schema.sql. `conditionSummary` maps to
-// the SQL `condition_summary` column (the word `condition` is reserved in
-// SQL, which is why the column is named that way).
+// database/schemas/001_initial_mysql_schema.sql and /api/patients responses.
+// `conditionSummary` maps to the SQL `condition_summary` column.
 export type Patient = {
   id: string;
   name: string;
   age: number;
-  room?: string;
-  conditionSummary?: string;
+  room: string | null;
+  conditionSummary: string | null;
+  createdBy: string | null;
+  /** ISO-8601 timestamps. */
+  createdAt: string;
+  updatedAt: string;
 };
 
-const PATIENTS_KEY = "caresync.patients.v1";
-const NOTES_KEY = "caresync.notes.v1";
 const AUTH_KEY = "caresync.auth.v1";
 const PROFILE_KEY_PREFIX = "caresync.profile.v1.";
-
-const seedPatients: Patient[] = [
-  { id: "p1", name: "Margaret Chen", age: 78, room: "204A", conditionSummary: "Post-op recovery" },
-  { id: "p2", name: "Robert Alvarez", age: 82, room: "118B", conditionSummary: "Type 2 diabetes" },
-  {
-    id: "p3",
-    name: "Eleanor Whitfield",
-    age: 91,
-    room: "302",
-    conditionSummary: "Mobility assistance",
-  },
-];
 
 function read<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -61,32 +58,54 @@ function write<T>(key: string, value: T) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-export function getPatients(): Patient[] {
-  const p = read<Patient[]>(PATIENTS_KEY, []);
-  if (p.length === 0) {
-    write(PATIENTS_KEY, seedPatients);
-    return seedPatients;
-  }
-  return p;
+/* ---------------- patients & notes (API-backed) ---------------- */
+//
+// These talk to the backend via apiFetch — no localStorage caching. The
+// dashboard handles loading/error states. We dropped the seed-patient
+// fallback that the prototype used; new accounts start with an empty
+// patient list and an "Add your first patient" empty state.
+
+import { apiFetch } from "./api";
+
+export async function listPatients(): Promise<Patient[]> {
+  const res = await apiFetch<{ patients: Patient[] }>("/api/patients");
+  return res.patients;
 }
 
-export function addPatient(patient: Omit<Patient, "id">): Patient {
-  const list = getPatients();
-  const newP = { ...patient, id: `p${Date.now()}` };
-  write(PATIENTS_KEY, [newP, ...list]);
-  return newP;
+export type NewPatient = {
+  name: string;
+  age: number;
+  room?: string;
+  conditionSummary?: string;
+};
+
+export async function createPatient(patient: NewPatient): Promise<Patient> {
+  return apiFetch<Patient>("/api/patients", {
+    method: "POST",
+    body: patient,
+  });
 }
 
-export function getNotes(patientId?: string): Note[] {
-  const all = read<Note[]>(NOTES_KEY, []);
-  return patientId ? all.filter((n) => n.patientId === patientId) : all;
+export async function listNotes(patientId: string): Promise<Note[]> {
+  const res = await apiFetch<{ notes: Note[] }>(
+    `/api/patients/${encodeURIComponent(patientId)}/notes`,
+  );
+  return res.notes;
 }
 
-export function saveNote(note: Omit<Note, "id" | "createdAt">): Note {
-  const all = read<Note[]>(NOTES_KEY, []);
-  const newNote: Note = { ...note, id: `n${Date.now()}`, createdAt: Date.now() };
-  write(NOTES_KEY, [newNote, ...all]);
-  return newNote;
+export type NewNote = {
+  transcript: string;
+  patientConcern?: string;
+  careProvided?: string;
+  patientStatus?: string;
+  followUpNeeded?: string;
+};
+
+export async function createNote(patientId: string, note: NewNote): Promise<Note> {
+  return apiFetch<Note>(`/api/patients/${encodeURIComponent(patientId)}/notes`, {
+    method: "POST",
+    body: note,
+  });
 }
 
 /* ---------------- auth ---------------- */
@@ -284,10 +303,10 @@ export async function isProfileComplete(email: string): Promise<boolean> {
   const p = await getUserProfile(email);
   return Boolean(
     p &&
-      p.firstName.trim() &&
-      p.lastName.trim() &&
-      isValidBirthdate(p.birthdate) &&
-      OCCUPATIONS.includes(p.occupation),
+    p.firstName.trim() &&
+    p.lastName.trim() &&
+    isValidBirthdate(p.birthdate) &&
+    OCCUPATIONS.includes(p.occupation),
   );
 }
 
