@@ -128,16 +128,36 @@ functions:
     handler: src/handlers/inspectDb.handler
     timeout: 30
 
-# Future functions (uncomment and implement when ready):
-#  patients:
-#    handler: src/handlers/patients.handler
-#    events:
-#      - httpApi:
-#          path: /api/patients
-#          method: any
-#  notes:
-#    handler: src/handlers/notes.handler
-#    events:
-#      - httpApi:
-#          path: /api/patients/{patientId}/notes
-#          method: any
+  # ──────────────────────────────────────────────────────────────────────
+  # Phase 3: app API. All routes verify the caller's Cognito JWT and
+  # resolve them to a row in the `users` table before running the handler.
+  # ──────────────────────────────────────────────────────────────────────
+
+  me:
+    handler: src/handlers/me.handler
+    events:
+      - httpApi:
+          path: /api/me
+          method: get
+
+  # Single Lambda handles list + create on /api/patients and
+  # get + update + delete on /api/patients/{id}. The handler dispatches
+  # internally on event.requestContext.http.method + pathParameters.id.
+  patients:
+    handler: src/handlers/patients.handler
+    events:
+      - httpApi:
+          path: /api/patients
+          method: get
+      - httpApi:
+          path: /api/patients
+          method: post
+      - httpApi:
+          path: /api/patients/{id}
+          method: get
+      - httpApi:
+          path: /api/patients/{id}
+          method: put
+      - httpApi:
+          path: /api/patients/{id}
+          method: delete
