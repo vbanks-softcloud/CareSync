@@ -248,10 +248,18 @@ function Dashboard() {
   // patient note counts so each name in the sidebar / sliding sheet can
   // show "N notes" alongside it — for that we need the data up front.
   //
-  // Today we do this client-side with N parallel API calls — fine for the
-  // typical caregiver workload (handful of patients). If/when this grows
-  // into the hundreds, swap to a dedicated GET /api/notes endpoint that
-  // joins server-side and returns one paginated response.
+  // Concurrency: we batch in groups of ALL_NOTES_FETCH_CONCURRENCY to
+  // avoid exhausting the backend account's Lambda concurrent-execution
+  // budget. A naive `Promise.all(patients.map(listNotes))` issues N
+  // parallel calls; on dev accounts where the per-account Lambda
+  // concurrency limit is still the new-account default of 10, more
+  // than ~10 patients reliably tripped throttling and the user saw a
+  // 503 "Service Unavailable" toast. Batching to 3 keeps the
+  // wall-clock cost roughly the same (each call is a few hundred ms)
+  // while staying well under the limit no matter how many patients a
+  // caregiver has. Long-term fix is a server-side batch endpoint —
+  // tracked in the TODO above the function.
+  const ALL_NOTES_FETCH_CONCURRENCY = 3;
   useEffect(() => {
     // Cache hit: we already loaded the notes for this exact patient set
     // AND haven't been manually invalidated (setAllNotes(null)). Earlier
@@ -272,18 +280,24 @@ function Dashboard() {
     setAllNotesLoading(true);
     (async () => {
       try {
-        const perPatient = await Promise.all(
-          patients.map(async (p) => {
-            const list = await listNotes(p.id);
-            return list.map<DisplayNote>((n) => ({
-              ...n,
-              patientName: p.name,
-              patientAge: p.age,
-              patientGender: p.gender,
-              patientBirthdate: p.birthdate,
-            }));
-          }),
-        );
+        const perPatient: DisplayNote[][] = [];
+        for (let i = 0; i < patients.length; i += ALL_NOTES_FETCH_CONCURRENCY) {
+          if (cancelled) return;
+          const slice = patients.slice(i, i + ALL_NOTES_FETCH_CONCURRENCY);
+          const chunk = await Promise.all(
+            slice.map(async (p) => {
+              const list = await listNotes(p.id);
+              return list.map<DisplayNote>((n) => ({
+                ...n,
+                patientName: p.name,
+                patientAge: p.age,
+                patientGender: p.gender,
+                patientBirthdate: p.birthdate,
+              }));
+            }),
+          );
+          perPatient.push(...chunk);
+        }
         if (cancelled) return;
         allNotesLoadedKey.current = patientIdKey;
         setAllNotes(perPatient.flat());
