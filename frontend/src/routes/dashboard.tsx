@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   Mic,
   Square,
@@ -38,6 +49,7 @@ import {
   X,
   Pencil,
 } from "lucide-react";
+import followUpHandUrl from "@/assets/follow-up-hand.png";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -110,9 +122,20 @@ function Dashboard() {
     followUpNeeded: "",
     miscellaneousNotes: "",
   });
+  // Whether the user has flagged this new note as needing follow-up.
+  // Kept separate from `structured.followUpNeeded` so toggle-YES + empty
+  // text is a distinguishable state from toggle-NO; the save handler
+  // substitutes FOLLOW_UP_DEFAULT only when this is true and the text
+  // is empty.
+  const [followUpEnabledNew, setFollowUpEnabledNew] = useState(false);
   const [editableTranscript, setEditableTranscript] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [patientSheetOpen, setPatientSheetOpen] = useState(false);
+  // Controls the "Are you sure you want to sign out?" confirmation. The
+  // Sign out button just opens the dialog; the actual signOut + redirect
+  // runs from the dialog's confirm action.
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [auth, setAuth] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [tab, setTab] = useState("record");
@@ -122,6 +145,10 @@ function Dashboard() {
   // Persisted only in memory — resets on page reload, which is fine.
   const [patientSearch, setPatientSearch] = useState("");
   const [patientSort, setPatientSort] = useState<PatientSort>("recent");
+  // "Only show patients with follow-up" toggle on the patient list.
+  // Filter is applied AFTER `filterAndSortPatients` so it composes with
+  // the existing search / sort without touching that pure utility.
+  const [patientOnlyFollowUp, setPatientOnlyFollowUp] = useState(false);
 
   // Filter / sort state for the notes history tab.
   const [noteSearch, setNoteSearch] = useState("");
@@ -201,17 +228,43 @@ function Dashboard() {
     };
   }, [navigate]);
 
-  // Aggregates notes from every patient when the user enters "all" scope.
+  // Stable key derived from the current patient set. Used as the cache
+  // signature for the cross-patient notes load below so we can tell
+  // "we've already fetched for this exact cohort" apart from "we
+  // happen to have an empty array because patients hadn't loaded yet".
+  const patientIdKey = useMemo(
+    () =>
+      patients
+        .map((p) => p.id)
+        .sort()
+        .join("|"),
+    [patients],
+  );
+  const allNotesLoadedKey = useRef<string | null>(null);
+
+  // Aggregates notes from every patient. Originally gated on
+  // `notesScope === "all"` (only loaded when the user opened the
+  // cross-patient History view), but the patient list also needs per-
+  // patient note counts so each name in the sidebar / sliding sheet can
+  // show "N notes" alongside it — for that we need the data up front.
+  //
   // Today we do this client-side with N parallel API calls — fine for the
   // typical caregiver workload (handful of patients). If/when this grows
   // into the hundreds, swap to a dedicated GET /api/notes endpoint that
   // joins server-side and returns one paginated response.
   useEffect(() => {
-    if (notesScope !== "all") return;
-    // Already loaded — don't refetch. Cache is invalidated by `handleSave`
-    // and by adding a new patient, both of which clear allNotes back to null.
-    if (allNotes !== null) return;
+    // Cache hit: we already loaded the notes for this exact patient set
+    // AND haven't been manually invalidated (setAllNotes(null)). Earlier
+    // versions short-circuited on `allNotes !== null`, which had a
+    // subtle bug — on first mount with `patients === []`, the effect set
+    // `allNotes = []` and then the early-return blocked the real fetch
+    // once `listPatients()` populated `patients`. Keying the cache on
+    // `patientIdKey` instead fixes that: an empty-patients load doesn't
+    // satisfy the cache for the post-load patient set.
+    if (allNotesLoadedKey.current === patientIdKey && allNotes !== null) return;
+
     if (patients.length === 0) {
+      allNotesLoadedKey.current = patientIdKey;
       setAllNotes([]);
       return;
     }
@@ -232,6 +285,7 @@ function Dashboard() {
           }),
         );
         if (cancelled) return;
+        allNotesLoadedKey.current = patientIdKey;
         setAllNotes(perPatient.flat());
       } catch (err) {
         if (cancelled) return;
@@ -244,7 +298,7 @@ function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [notesScope, allNotes, patients]);
+  }, [patientIdKey, patients, allNotes]);
 
   // Reload notes whenever the selected patient changes. We don't cache
   // across switches because the list is cheap (indexed query) and we want
@@ -282,12 +336,50 @@ function Dashboard() {
     [patients, selectedId],
   );
 
-  // Apply search + sort to the patient list. We do this client-side because
-  // we already loaded everything the user owns up-front; no extra round trips.
-  const filteredPatients = useMemo(
-    () => filterAndSortPatients(patients, patientSearch, patientSort),
-    [patients, patientSearch, patientSort],
-  );
+  // Per-patient note stats: total count + number flagged for follow-up.
+  // Derived from `allNotes` (loaded eagerly above) so the patient list
+  // can render "N notes" + a "follow-up: K" badge next to each name.
+  // For the currently-selected patient we overlay the live `notes` list
+  // because it's refreshed after every add/edit/delete and reflects the
+  // user's latest action even before allNotes refetches. Patients with
+  // no entry in the map render as 0/0. When allNotes is still loading
+  // (null) we return an empty map; PatientList treats `undefined` as
+  // "unknown" and hides badges until data arrives, avoiding a
+  // confusing "0 notes" flash on first paint.
+  const noteStats = useMemo<Record<string, { total: number; followUps: number }>>(() => {
+    if (!allNotes) return {};
+    const stats: Record<string, { total: number; followUps: number }> = {};
+    for (const p of patients) stats[p.id] = { total: 0, followUps: 0 };
+    const hasFollowUp = (n: Note) =>
+      typeof n.followUpNeeded === "string" && n.followUpNeeded.trim().length > 0;
+    for (const n of allNotes) {
+      const slot = stats[n.patientId] ?? { total: 0, followUps: 0 };
+      slot.total += 1;
+      if (hasFollowUp(n)) slot.followUps += 1;
+      stats[n.patientId] = slot;
+    }
+    // Overlay live data for the currently-selected patient so the badge
+    // reflects in-flight edits before the next allNotes refetch.
+    if (selectedId) {
+      stats[selectedId] = {
+        total: notes.length,
+        followUps: notes.filter(hasFollowUp).length,
+      };
+    }
+    return stats;
+  }, [allNotes, patients, notes, selectedId]);
+
+  // Final patient list: client-side search + sort + optional
+  // "follow-up only" narrowing. Consolidated into a single memo (vs.
+  // a base memo + filter memo) so the sort is guaranteed to re-run on
+  // every relevant change — that avoids any chance of the list
+  // appearing "stuck" in an order from a previous filter state when
+  // the user toggles the follow-up filter off.
+  const filteredPatients = useMemo(() => {
+    const sorted = filterAndSortPatients(patients, patientSearch, patientSort);
+    if (!patientOnlyFollowUp) return sorted;
+    return sorted.filter((p) => (noteStats[p.id]?.followUps ?? 0) > 0);
+  }, [patients, patientSearch, patientSort, patientOnlyFollowUp, noteStats]);
 
   // The notes the History tab is currently rendering — either this patient's
   // notes, or everything aggregated. Null while "all" is still loading.
@@ -299,13 +391,70 @@ function Dashboard() {
     [displayedNotes, noteSearch, noteSort, notesOnlyFollowUp],
   );
 
+  // Set of note ids that are the most recent (by createdAt) for their
+  // patient. The "Newly created" badge is exclusive to these — when the
+  // user adds a newer note, the previous "newest" silently loses the
+  // badge because it's no longer top-of-stack for that patient.
+  //
+  // We compute this against the FULL list (not the filtered one) so
+  // sorting by oldest or filtering by follow-up doesn't change which
+  // note holds the badge — it's always the chronologically newest.
+  const newestNoteIdsPerPatient = useMemo(() => {
+    const newest = new Map<string, DisplayNote>();
+    for (const n of displayedNotes ?? []) {
+      const current = newest.get(n.patientId);
+      if (!current || n.createdAt > current.createdAt) {
+        newest.set(n.patientId, n);
+      }
+    }
+    return new Set(Array.from(newest.values(), (n) => n.id));
+  }, [displayedNotes]);
+
+  // Set of note ids that wear the "Recently edited" badge: the 3 most
+  // recently edited notes PER PATIENT. Beyond that the badge would
+  // proliferate across the history list and stop signaling anything
+  // useful — capping at 3 keeps the cue meaningful while still
+  // surfacing the small batch of notes the caregiver most likely
+  // touched recently. Computed against the FULL list (not the
+  // filtered one) so the cap doesn't shuffle based on search /
+  // sort / follow-up filter state.
+  const RECENTLY_EDITED_PER_PATIENT_CAP = 3;
+  const recentlyEditedNoteIdsPerPatient = useMemo(() => {
+    // Build a map of patientId → [{noteId, editedAt}, ...] for edited
+    // notes only, then sort each bucket by edit time desc and keep
+    // the top N.
+    const buckets = new Map<string, { id: string; editedAt: string }[]>();
+    for (const n of displayedNotes ?? []) {
+      const editedAt = latestEditedAt(n);
+      if (!editedAt) continue;
+      const bucket = buckets.get(n.patientId);
+      if (bucket) {
+        bucket.push({ id: n.id, editedAt });
+      } else {
+        buckets.set(n.patientId, [{ id: n.id, editedAt }]);
+      }
+    }
+    const ids = new Set<string>();
+    for (const bucket of buckets.values()) {
+      bucket.sort((a, b) => b.editedAt.localeCompare(a.editedAt));
+      for (let i = 0; i < Math.min(RECENTLY_EDITED_PER_PATIENT_CAP, bucket.length); i++) {
+        ids.add(bucket[i]!.id);
+      }
+    }
+    return ids;
+  }, [displayedNotes]);
+
   const handleStructure = () => {
     const text = editableTranscript.trim();
     if (!text) {
       toast.error("Nothing to structure yet.");
       return;
     }
-    setStructured(structureTranscript(text));
+    const result = structureTranscript(text);
+    setStructured(result);
+    // If the heuristic extracted any follow-up text, enable the toggle so
+    // the user sees the populated section without having to flip it.
+    setFollowUpEnabledNew(result.followUpNeeded.trim().length > 0);
     setTab("review");
     toast.success("Note structured", { description: "Review and edit before saving." });
   };
@@ -318,6 +467,14 @@ function Dashboard() {
     }
     setSaving(true);
     try {
+      // If the toggle is YES but the user didn't type anything, persist
+      // FOLLOW_UP_DEFAULT so downstream UI (badges, "All notes" preview)
+      // still has a non-empty signal. If the toggle is NO, persist "".
+      const followUpRaw = followUpEnabledNew
+        ? structured.followUpNeeded.trim().length > 0
+          ? structured.followUpNeeded
+          : FOLLOW_UP_DEFAULT
+        : "";
       // Normalize free-text fields to sentence case before they're persisted
       // so the saved record reads cleanly regardless of how the user typed.
       const note = await createNote(selected.id, {
@@ -325,7 +482,7 @@ function Dashboard() {
         patientConcern: capitalizeSentences(structured.patientConcern),
         careProvided: capitalizeSentences(structured.careProvided),
         patientStatus: capitalizeSentences(structured.patientStatus),
-        followUpNeeded: capitalizeSentences(structured.followUpNeeded),
+        followUpNeeded: capitalizeSentences(followUpRaw),
         miscellaneousNotes: capitalizeSentences(structured.miscellaneousNotes),
       });
       setNotes([note, ...notes]);
@@ -340,6 +497,7 @@ function Dashboard() {
         followUpNeeded: "",
         miscellaneousNotes: "",
       });
+      setFollowUpEnabledNew(false);
       speech.reset();
       setTab("history");
       toast.success("Note saved", { description: "Encrypted and added to patient record." });
@@ -350,9 +508,19 @@ function Dashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate({ to: "/" });
+  // Triggered from the AlertDialog's confirm button — runs the actual
+  // Cognito sign-out and bounces to the landing page. The dialog is
+  // dismissed on its own via state, and the in-flight flag disables the
+  // confirm button so a double-click can't fire two signOut calls.
+  const handleConfirmSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+      navigate({ to: "/" });
+    } finally {
+      setSigningOut(false);
+      setConfirmSignOut(false);
+    }
   };
 
   const selectPatient = (id: string) => {
@@ -387,14 +555,11 @@ function Dashboard() {
             <div className="flex items-baseline gap-2 truncate font-display text-sm leading-tight sm:text-base">
               <span className="font-semibold">CareSync</span>
               {/* Tagline lives inline with the brand. Hidden below `sm` so
-                  it doesn't crowd the header on phones, where the
-                  displayName subline already conveys context. */}
+                  it doesn't crowd the header on phones; the caregiver
+                  name in the profile pill on the right conveys context. */}
               <span className="hidden truncate text-xs font-medium italic text-muted-foreground sm:inline sm:text-sm">
                 Voice notes that cares
               </span>
-            </div>
-            <div className="truncate text-[11px] text-muted-foreground sm:text-xs">
-              {displayName}
             </div>
           </div>
 
@@ -415,6 +580,7 @@ function Dashboard() {
                   totalCount={patients.length}
                   selectedId={selectedId}
                   onSelect={selectPatient}
+                  noteStats={noteStats}
                 />
               </div>
               <div className="space-y-3 border-t bg-card p-3">
@@ -423,6 +589,8 @@ function Dashboard() {
                   onSearchChange={setPatientSearch}
                   sort={patientSort}
                   onSortChange={setPatientSort}
+                  onlyFollowUp={patientOnlyFollowUp}
+                  onOnlyFollowUpChange={setPatientOnlyFollowUp}
                 />
                 <Button
                   size="sm"
@@ -441,22 +609,81 @@ function Dashboard() {
             </SheetContent>
           </Sheet>
 
+          {/* Sign out is the modern-app standard wording (Gmail / GitHub /
+              AWS / Slack). Icon-only on phones, icon + label on sm+ so
+              the action is unmistakable without sacrificing header width.
+              The actual sign-out runs from the confirmation dialog below,
+              not directly here — preventing accidental mid-charting taps
+              that would discard the user's unsaved transcript. */}
           <Button
             variant="ghost"
-            size="icon"
-            onClick={handleLogout}
-            className="h-9 w-9"
+            onClick={() => setConfirmSignOut(true)}
+            className="h-9 gap-1.5 px-2 sm:px-3"
             aria-label="Sign out"
           >
             <LogOut className="h-4 w-4" />
+            <span className="hidden text-sm sm:inline">Sign out</span>
           </Button>
+
+          <AlertDialog open={confirmSignOut} onOpenChange={setConfirmSignOut}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Sign out of CareSync?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  You'll need to sign back in with your email and password to
+                  access patient records. Any unsaved transcript on the
+                  Record tab will be lost.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    // Prevent the Radix default close-on-click so we can
+                    // keep the dialog mounted while the async sign-out is
+                    // in flight — handleConfirmSignOut closes it itself.
+                    e.preventDefault();
+                    void handleConfirmSignOut();
+                  }}
+                  disabled={signingOut}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {signingOut ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                      Signing out…
+                    </>
+                  ) : (
+                    "Sign out"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Profile entry point: caregiver name next to a standalone
+              avatar circle. No always-on pill chrome — just clean
+              elements with a subtle hover background, so it doesn't look
+              like a heavy-weight pill. Name is hidden on phones so the
+              avatar alone anchors the corner. */}
           <Link
             to="/profile"
-            className="bg-accent text-accent-foreground hover:bg-accent/80 focus-visible:ring-ring flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            className="group flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Edit profile"
             title="Edit profile"
           >
-            {initials}
+            <span className="hidden truncate text-sm font-medium text-foreground sm:inline">
+              {displayName}
+            </span>
+            {/* Avatar renders an uploaded image / preset emoji / initials
+                fallback depending on what the user has saved in their
+                profile. The ring lights up on hover for visual feedback. */}
+            <UserAvatar
+              picture={profile?.picture}
+              initials={initials}
+              size="sm"
+              className="ring-2 ring-transparent transition-all group-hover:ring-primary/30"
+            />
           </Link>
         </div>
       </header>
@@ -486,12 +713,15 @@ function Dashboard() {
             onSearchChange={setPatientSearch}
             sort={patientSort}
             onSortChange={setPatientSort}
+            onlyFollowUp={patientOnlyFollowUp}
+            onOnlyFollowUpChange={setPatientOnlyFollowUp}
           />
           <PatientList
             patients={filteredPatients}
             totalCount={patients.length}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            noteStats={noteStats}
           />
         </aside>
 
@@ -528,34 +758,49 @@ function Dashboard() {
                 />
               </div>
 
-              {/* Patient navigation row — mobile only. Left button opens
-                  the full patient list sheet, right button adds a new
-                  patient. Equal-width so they feel like a paired action
-                  bar above the tabs. Desktop already has these via the
-                  sidebar so the row is hidden at lg+. */}
-              {/* Both buttons use the brand red (`bg-primary`) — same hue
-                  as the desktop sidebar's + ADD button and the active
-                  Record/Review/History tab pill — so the mobile action
-                  row reads as the primary navigation surface. */}
+              {/* Patient navigation row — mobile only. Three equal-width
+                  buttons: open the patient list sheet, add a new
+                  patient, and jump straight to the Record tab to add
+                  a note. Desktop already has these affordances via
+                  the sidebar + tabs so the row is hidden at lg+.
+                  All three share the brand red (`bg-primary`) — same
+                  hue as the desktop sidebar's + ADD button and the
+                  active Record/Review/History tab pill — so the row
+                  reads as the primary navigation surface. */}
               <div className="flex gap-2 lg:hidden">
                 <Button
                   onClick={() => setPatientSheetOpen(true)}
-                  className="flex-1 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="flex-1 gap-1.5 bg-primary px-2 text-primary-foreground hover:bg-primary/90"
                 >
-                  <Users className="h-4 w-4" />
-                  <span>View all patients</span>
+                  <Users className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Patients</span>
                   <Badge
                     variant="secondary"
-                    className="ml-0.5 h-5 bg-primary-foreground/20 px-1.5 text-[10px] text-primary-foreground"
+                    className="ml-0.5 h-5 shrink-0 bg-primary-foreground/20 px-1.5 text-[10px] text-primary-foreground"
                   >
                     {patients.length}
                   </Badge>
                 </Button>
                 <Button
                   onClick={() => setShowAdd(true)}
-                  className="flex-1 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="flex-1 gap-1.5 bg-primary px-2 text-primary-foreground hover:bg-primary/90"
                 >
-                  <Plus className="h-4 w-4" /> Add patient
+                  <Plus className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Add patient</span>
+                </Button>
+                {/* "Add note" jumps to the Record tab so caregivers can
+                    start a new note without scrolling down to the tab
+                    bar. Disabled when there's no selected patient yet
+                    — the Record tab needs one to attach the note to,
+                    and tapping this with no patient would land them
+                    on an empty-state page. */}
+                <Button
+                  onClick={() => setTab("record")}
+                  disabled={!selected}
+                  className="flex-1 gap-1.5 bg-primary px-2 text-primary-foreground hover:bg-primary/90"
+                >
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Add note</span>
                 </Button>
               </div>
 
@@ -706,6 +951,8 @@ function Dashboard() {
                       <FollowUpField
                         value={structured.followUpNeeded}
                         onChange={(v) => setStructured({ ...structured, followUpNeeded: v })}
+                        enabled={followUpEnabledNew}
+                        onEnabledChange={setFollowUpEnabledNew}
                         placeholder="e.g. Monitor pain level next round."
                       />
                       <Field
@@ -829,6 +1076,8 @@ function Dashboard() {
                           <NoteRow
                             key={n.id}
                             note={n}
+                            isNewest={newestNoteIdsPerPatient.has(n.id)}
+                            isRecentlyEdited={recentlyEditedNoteIdsPerPatient.has(n.id)}
                             onPatientClick={setEditingPatientId}
                             onOpen={(note) => {
                               // Always make sure the dialog has the patient
@@ -948,6 +1197,7 @@ function PatientList({
   totalCount,
   selectedId,
   onSelect,
+  noteStats,
 }: {
   patients: Patient[];
   // Total count before filters were applied. Used to distinguish "no patients
@@ -955,11 +1205,16 @@ function PatientList({
   totalCount?: number;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Map of patient id → { total notes, follow-ups }. A missing key
+   * (vs. value 0) means stats haven't loaded yet — we hide the badges
+   * in that case to avoid an incorrect "0 notes" flash before
+   * allNotes resolves. */
+  noteStats?: Record<string, { total: number; followUps: number }>;
 }) {
   if (patients.length === 0 && (totalCount ?? 0) > 0) {
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
-        No patients match your search.
+        No patients match your filters.
       </div>
     );
   }
@@ -967,23 +1222,106 @@ function PatientList({
     <div className="space-y-1.5">
       {patients.map((p) => {
         const active = p.id === selectedId;
+        const stats = noteStats?.[p.id];
+        // Pills only render when both:
+        //  (a) stats have loaded (so we don't flash incorrect values),
+        //  (b) the value is > 0 (a 0 count just creates visual noise
+        //      for patients who have nothing yet — quiet patients stay
+        //      quiet).
+        // `undefined` stats = still loading, so we treat it like 0
+        // here and render nothing until the eager allNotes fetch
+        // resolves.
+        const totalCount = stats?.total ?? 0;
+        const followUpCount = stats?.followUps ?? 0;
+        const countLabel =
+          totalCount > 0 ? (totalCount === 1 ? "1 note" : `${totalCount} notes`) : null;
+        const followLabel =
+          followUpCount > 0
+            ? `${followUpCount} follow-up${followUpCount === 1 ? "" : "s"} pending`
+            : null;
         return (
           <button
             key={p.id}
             onClick={() => onSelect(p.id)}
-            className={`flex w-full items-center justify-between rounded-lg border px-3 py-3 text-left transition active:scale-[0.99] ${
+            className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-3 text-left transition active:scale-[0.99] ${
               active
                 ? "border-primary/40 bg-accent text-accent-foreground shadow-clinical"
                 : "bg-card hover:border-primary/30 hover:bg-accent/50"
             }`}
           >
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{p.name}</div>
               <div className="truncate text-xs text-muted-foreground">
                 Age {formatAgeLabel(p.birthdate, p.age)} · {formatPatientLocation(p)}
               </div>
             </div>
-            {active && <div className="ml-2 h-2 w-2 shrink-0 rounded-full bg-primary" />}
+            {/* Pill cluster — pills side-by-side with a comfortable
+                breathing gap. The selection dot renders ONLY for the
+                currently-selected row, off the right edge, which
+                visually nudges that row's pills left to make room
+                for it. Unselected rows have no dot, so their pills
+                stay flush right and align with each other. The
+                slight left-shift on the selected row is the visual
+                cue — "this is the one you're looking at". Counts
+                use `min-w-[2ch]` + `tabular-nums` so a 1-digit pill
+                takes exactly the same footprint as a 2-digit pill,
+                keeping unselected rows perfectly aligned with each
+                other. */}
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Hand and clipboard pills share the same shape
+                  (`rounded-full`), padding (`py-1 pl-1 pr-3`), and
+                  icon-to-digit gap (`gap-1`) so they read as a
+                  matched pair, only differing in tint (purple vs.
+                  brand red). The digit explicitly overrides to
+                  `text-foreground` on both, so the number reads in the
+                  standard body color (near-black in light mode,
+                  near-white in dark mode) regardless of the pill's
+                  background tint. */}
+              <span
+                className={`flex shrink-0 items-center gap-1 rounded-full bg-purple-100 py-1 pl-1 pr-3 text-sm font-semibold text-purple-800 ring-1 ring-purple-300/60 dark:bg-purple-950/40 dark:text-purple-200 dark:ring-purple-700/40 ${
+                  followLabel ? "" : "invisible"
+                }`}
+                aria-label={followLabel ? `${followLabel} for ${p.name}` : undefined}
+                aria-hidden={followLabel ? undefined : true}
+                title={followLabel ?? undefined}
+              >
+                <img
+                  src={followUpHandUrl}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-7 w-7 select-none"
+                  draggable={false}
+                />
+                <span className="min-w-[2ch] text-right tabular-nums text-foreground">
+                  {followUpCount}
+                </span>
+              </span>
+              {/* Brand-red tint (matches the per-note "Recently edited"
+                  badge + the active tab pill) so the clipboard pill
+                  doesn't blend into the row's hover/accent background
+                  the way the default secondary gray does. `rounded-full`
+                  overrides the Badge component's default `rounded-md`
+                  so its shape matches the hand pill exactly. */}
+              <Badge
+                variant="secondary"
+                className={`flex shrink-0 items-center gap-1 rounded-full border-transparent bg-primary/10 py-1 pl-1 pr-3 text-sm font-semibold text-primary ring-1 ring-primary/30 dark:bg-primary/20 ${
+                  countLabel ? "" : "invisible"
+                }`}
+                aria-label={countLabel ? `${countLabel} for ${p.name}` : undefined}
+                aria-hidden={countLabel ? undefined : true}
+              >
+                <ClipboardList className="h-7 w-7" strokeWidth={1.75} />
+                <span className="min-w-[2ch] text-right tabular-nums text-foreground">
+                  {totalCount}
+                </span>
+              </Badge>
+              {active && (
+                <div
+                  className="h-2 w-2 rounded-full bg-primary"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
           </button>
         );
       })}
@@ -996,12 +1334,19 @@ function PatientFilters({
   onSearchChange,
   sort,
   onSortChange,
+  onlyFollowUp,
+  onOnlyFollowUpChange,
   className,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
   sort: PatientSort;
   onSortChange: (v: PatientSort) => void;
+  /** If true, the list is narrowed to patients with at least one note
+   * flagged for follow-up. Drives the new "Only show follow-up
+   * patients" toggle below. */
+  onlyFollowUp: boolean;
+  onOnlyFollowUpChange: (v: boolean) => void;
   className?: string;
 }) {
   return (
@@ -1031,6 +1376,44 @@ function PatientFilters({
           ))}
         </SelectContent>
       </Select>
+      {/* Follow-up filter — same toggle pattern as NoteFilters'
+          "Only show notes with follow-up", permanently purple-tinted
+          so the row visually belongs to the purple follow-up family
+          regardless of state. OFF = soft purple wash + purple text so
+          the user knows what this control is for. ON = deeper purple
+          background and a saturated-purple switch track so the active
+          state is still clearly distinguishable from the resting
+          state. The switch's gray-thumb (off) vs purple-thumb-track
+          (on) is what tells you it's actually flipped. */}
+      <label
+        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors ${
+          onlyFollowUp
+            ? "border-purple-300/60 bg-purple-100 dark:border-purple-700/40 dark:bg-purple-950/40"
+            : "border-purple-200/60 bg-purple-50/60 dark:border-purple-800/30 dark:bg-purple-950/20"
+        }`}
+      >
+        <span
+          className={`flex items-center gap-2 ${
+            onlyFollowUp
+              ? "font-semibold text-purple-800 dark:text-purple-200"
+              : "text-purple-700 dark:text-purple-300"
+          }`}
+        >
+          <img
+            src={followUpHandUrl}
+            alt=""
+            aria-hidden="true"
+            className="h-5 w-5 select-none"
+            draggable={false}
+          />
+          Only show follow-up patients
+        </span>
+        <Switch
+          checked={onlyFollowUp}
+          onCheckedChange={onOnlyFollowUpChange}
+          className="data-[state=checked]:bg-purple-600 dark:data-[state=checked]:bg-purple-500"
+        />
+      </label>
     </div>
   );
 }
@@ -1078,12 +1461,44 @@ function NoteFilters({
           </SelectContent>
         </Select>
       </div>
-      <label className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-sm">
-        <span className="flex items-center gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+      {/* Follow-up filter — mirrors the PatientFilters "Only show
+          follow-up patients" toggle: permanently purple-tinted so the
+          row visually belongs to the purple follow-up family
+          regardless of state. OFF = soft purple wash + purple text so
+          the user can spot the control as a follow-up affordance even
+          when inactive. ON = deeper purple bg + saturated-purple
+          switch track so the active state is still clearly
+          distinguishable. The hand-with-heart icon also matches the
+          per-row Follow-up badges and the patient-list follow-up pill
+          for a unified visual language. */}
+      <label
+        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors ${
+          onlyFollowUp
+            ? "border-purple-300/60 bg-purple-100 dark:border-purple-700/40 dark:bg-purple-950/40"
+            : "border-purple-200/60 bg-purple-50/60 dark:border-purple-800/30 dark:bg-purple-950/20"
+        }`}
+      >
+        <span
+          className={`flex items-center gap-2 ${
+            onlyFollowUp
+              ? "font-semibold text-purple-800 dark:text-purple-200"
+              : "text-purple-700 dark:text-purple-300"
+          }`}
+        >
+          <img
+            src={followUpHandUrl}
+            alt=""
+            aria-hidden="true"
+            className="h-5 w-5 select-none"
+            draggable={false}
+          />
           Only show notes with follow-up
         </span>
-        <Switch checked={onlyFollowUp} onCheckedChange={onOnlyFollowUpChange} />
+        <Switch
+          checked={onlyFollowUp}
+          onCheckedChange={onOnlyFollowUpChange}
+          className="data-[state=checked]:bg-purple-600 dark:data-[state=checked]:bg-purple-500"
+        />
       </label>
     </div>
   );
@@ -1124,8 +1539,8 @@ function PatientHeader({ patient, noteCount }: { patient: Patient; noteCount: nu
           </p>
         </div>
       </div>
-      <Badge variant="secondary" className="gap-1">
-        <ClipboardList className="h-3.5 w-3.5" /> {noteCount}
+      <Badge variant="secondary" className="gap-2 px-3 py-1.5 text-base sm:text-lg">
+        <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" /> {noteCount}
       </Badge>
     </Card>
   );
@@ -1308,22 +1723,43 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 /** Specialized Field for "Follow-up needed". A yes/no Switch controls
  * whether the textarea is shown. Toggling to "No" clears the value so
  * the saved note actually reflects "no follow-up", not stale text. */
+/** Default text persisted when the user toggles follow-up YES but never
+ * types anything. The textarea intentionally stays empty in the UI so
+ * the user is nudged to write something personalized — this default is
+ * a fallback applied only at save time, by callers, when they detect
+ * the empty-text-but-toggle-YES state. */
+const FOLLOW_UP_DEFAULT = "Follow-up needed";
+
+/**
+ * Follow-up needed YES/NO toggle plus optional details textarea.
+ *
+ * Controlled in BOTH `enabled` and `value`. We keep `enabled` lifted to
+ * the parent so the save handler knows the difference between:
+ *   - toggle NO + empty text → "no follow-up needed"
+ *   - toggle YES + empty text → "follow-up needed, no specific note"
+ *
+ * Without that, the two states would collapse into the same empty
+ * string. The parent decides what to persist for the second case
+ * (typically: send FOLLOW_UP_DEFAULT so downstream UI still has
+ * something to display in the per-section preview).
+ */
 function FollowUpField({
   value,
   onChange,
+  enabled,
+  onEnabledChange,
   placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
   placeholder?: string;
 }) {
-  // Initial enabled state is derived from whether there's already text.
-  // After mount we track it explicitly so the user can flip YES without
-  // typing immediately and have the textbox stay open.
-  const [enabled, setEnabled] = useState(value.trim().length > 0);
-
   const handleToggle = (v: boolean) => {
-    setEnabled(v);
+    onEnabledChange(v);
+    // Switching OFF clears any text the user had so re-toggling ON
+    // starts fresh with an empty textarea (nudges personalization).
     if (!v) onChange("");
   };
 
@@ -1341,12 +1777,12 @@ function FollowUpField({
         <Textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
+          placeholder={placeholder ?? "What needs to happen, by when, and by whom?"}
           autoCapitalize="sentences"
           autoCorrect="on"
           spellCheck
           className="min-h-[64px] resize-none border-foreground/20 bg-background text-sm shadow-inner"
-          autoFocus={value === ""}
+          autoFocus
         />
       )}
     </FieldCard>
@@ -1381,10 +1817,24 @@ function latestEditedAt(note: Note): string | null {
 
 function NoteRow({
   note,
+  isNewest,
+  isRecentlyEdited,
   onPatientClick,
   onOpen,
 }: {
   note: DisplayNote;
+  // True only when this is the chronologically-newest note for its
+  // patient. Drives the exclusive "Newly created" badge — once a newer
+  // note exists for the same patient, the previous newest loses the
+  // badge. Computed by the parent against the full list so sorting /
+  // filtering doesn't shuffle which note holds it.
+  isNewest: boolean;
+  // True only when this note is among the N most-recently-edited notes
+  // for its patient (capped by the parent). The "Recently edited" badge
+  // is gated on this rather than on raw `wasEdited` so the cue stays
+  // meaningful — every edited note used to wear the badge, which
+  // turned it into background noise on patients with lots of edits.
+  isRecentlyEdited: boolean;
   // Only invoked when the row is rendered with a patientName (i.e. inside
   // the cross-patient "All notes" view). Clicking opens the edit dialog
   // for that patient.
@@ -1407,50 +1857,80 @@ function NoteRow({
       className="block w-full rounded-lg border border-foreground/15 bg-card p-3 text-left shadow-sm transition hover:-translate-y-px hover:border-primary/60 hover:bg-accent/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4"
       aria-label="Open note details"
     >
-      {/* Patient name is only shown when this row is being rendered inside
-          the cross-patient "All patients" view; in single-patient mode the
-          tab header already says whose notes these are. */}
-      {note.patientName && (
-        <span
-          role="link"
-          tabIndex={0}
-          onClick={(e) => {
-            // Don't bubble — the outer row click would otherwise open the
-            // note detail dialog instead of the patient editor.
-            e.stopPropagation();
-            onPatientClick?.(note.patientId);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
+      {/* Headline block — groups the patient name (when shown), the
+          primary timestamp, and the status badges into a single
+          visually-distinct header. The bottom border + padding
+          create a clear horizontal divider between the "who/when"
+          metadata and the actual note content below. Used in both
+          the cross-patient "All notes" view and the single-patient
+          history view; in the latter the patient name is skipped
+          since the tab header already names the patient. */}
+      <div className="mb-3 border-b border-foreground/15 pb-2">
+        {note.patientName && (
+          <span
+            role="link"
+            tabIndex={0}
+            onClick={(e) => {
+              // Don't bubble — the outer row click would otherwise open the
+              // note detail dialog instead of the patient editor.
               e.stopPropagation();
               onPatientClick?.(note.patientId);
-            }
-          }}
-          className="group -mx-1 mb-2 inline-flex items-center gap-2 rounded-md px-1 py-0.5 text-base font-bold text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-lg"
-          aria-label={`Edit ${note.patientName}`}
-          title="Click to edit patient"
-        >
-          <HeartPulse className="h-4 w-4 sm:h-5 sm:w-5" />
-          <span className="underline-offset-2 group-hover:underline">{note.patientName}</span>
-        </span>
-      )}
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">
-          {date.toLocaleDateString()} ·{" "}
-          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onPatientClick?.(note.patientId);
+              }
+            }}
+            className="group -mx-1 mb-1.5 inline-flex items-center gap-2 rounded-md px-1 py-0.5 text-base font-bold text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-lg"
+            aria-label={`Edit ${note.patientName}`}
+            title="Click to edit patient"
+          >
+            <HeartPulse className="h-4 w-4 sm:h-5 sm:w-5" />
+            <span className="underline-offset-2 group-hover:underline">{note.patientName}</span>
+          </span>
+        )}
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-foreground">
+            {date.toLocaleDateString()} ·{" "}
+            {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </div>
+          {/* Badge rules:
+                - Notes flagged for follow-up always show a purple badge so
+                  the caregiver can spot them while scanning the history.
+                  It's the most actionable signal, so it gets its own slot
+                  and renders alongside the status badge below.
+                - "Recently edited" (primary-tinted) is reserved for the
+                  N most-recently-edited notes PER PATIENT — older edits
+                  still have the per-field timestamp in the detail view,
+                  but the row-level cue is intentionally limited so it
+                  still means "you touched this recently".
+                - The single most-recent note PER PATIENT gets "Newly
+                  created" — adding a newer note silently transfers the
+                  badge to it, so only one note per patient ever wears it.
+                - Older un-edited notes show no status badge to keep the
+                  row clean. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {note.followUpNeeded && note.followUpNeeded.trim().length > 0 && (
+              <Badge
+                variant="secondary"
+                className="bg-purple-100 text-[10px] text-purple-800 ring-1 ring-purple-300/60 dark:bg-purple-950/40 dark:text-purple-200 dark:ring-purple-700/40"
+              >
+                Follow-up
+              </Badge>
+            )}
+            {wasEdited && isRecentlyEdited ? (
+              <Badge variant="secondary" className="bg-primary/10 text-[10px] text-primary">
+                Recently edited
+              </Badge>
+            ) : !wasEdited && isNewest ? (
+              <Badge variant="secondary" className="text-[10px]">
+                Newly created
+              </Badge>
+            ) : null}
+          </div>
         </div>
-        {/* Edited notes get a primary-tinted badge so they pop out from
-            brand-new ones at a glance. */}
-        <Badge
-          variant="secondary"
-          className={cn(
-            "text-[10px]",
-            wasEdited && "bg-primary/10 text-primary",
-          )}
-        >
-          {wasEdited ? "Recently edited" : "Newly created"}
-        </Badge>
       </div>
       <div className="grid gap-2 text-sm sm:grid-cols-2">
         {note.patientConcern && <Bit label="Concern" value={note.patientConcern} />}
@@ -1945,6 +2425,14 @@ function NoteDetailDialog({
   const [care, setCare] = useState(note.careProvided ?? "");
   const [status, setStatus] = useState(note.patientStatus ?? "");
   const [followUp, setFollowUp] = useState(note.followUpNeeded ?? "");
+  // Toggle state for the follow-up YES/NO switch. Derived initially from
+  // whether the note already has follow-up text; kept separate from
+  // `followUp` so toggle-YES + empty text is preserved (save handler
+  // substitutes FOLLOW_UP_DEFAULT in that case so we never persist
+  // an inconsistent "on but blank" state).
+  const [followUpEnabled, setFollowUpEnabled] = useState(
+    (note.followUpNeeded ?? "").trim().length > 0,
+  );
   const [misc, setMisc] = useState(note.miscellaneousNotes ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -1987,14 +2475,55 @@ function NoteDetailDialog({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const updated = await updateNote(note.patientId, note.id, {
-        transcript: capitalizeSentences(transcript),
-        patientConcern: capitalizeSentences(concern),
-        careProvided: capitalizeSentences(care),
-        patientStatus: capitalizeSentences(status),
-        followUpNeeded: capitalizeSentences(followUp),
-        miscellaneousNotes: capitalizeSentences(misc),
-      });
+      // Only send the fields the user actually changed in this edit
+      // session. If we sent every field every time, `capitalizeSentences`
+      // would subtly normalize unchanged-but-pre-normalizer text (e.g.
+      // "patient reports pain." → "Patient reports pain.") and the
+      // backend would correctly mark those columns as edited, stamping
+      // every _edited_at timestamp. That's why a transcript-only edit
+      // used to falsely flag patient_concern / care_provided as edited.
+      //
+      // The comparison is against the original raw values on `note` (the
+      // dialog's prop, unchanged across the session). Capitalization is
+      // applied only to fields that DID change, so the normalizer never
+      // touches text the user didn't deliberately edit.
+      const payload: Parameters<typeof updateNote>[2] = {};
+      if (transcript !== note.transcript) {
+        payload.transcript = capitalizeSentences(transcript);
+      }
+      if (concern !== (note.patientConcern ?? "")) {
+        payload.patientConcern = capitalizeSentences(concern);
+      }
+      if (care !== (note.careProvided ?? "")) {
+        payload.careProvided = capitalizeSentences(care);
+      }
+      if (status !== (note.patientStatus ?? "")) {
+        payload.patientStatus = capitalizeSentences(status);
+      }
+      // Collapse the (enabled, text) toggle pair into the single string we
+      // persist. Toggle YES + empty text → FOLLOW_UP_DEFAULT so the badge
+      // and preview still render. Toggle NO → "" (clears any prior value).
+      const effectiveFollowUp = followUpEnabled
+        ? followUp.trim().length > 0
+          ? followUp
+          : FOLLOW_UP_DEFAULT
+        : "";
+      if (effectiveFollowUp !== (note.followUpNeeded ?? "")) {
+        payload.followUpNeeded = capitalizeSentences(effectiveFollowUp);
+      }
+      if (misc !== (note.miscellaneousNotes ?? "")) {
+        payload.miscellaneousNotes = capitalizeSentences(misc);
+      }
+
+      // No actual changes — bail out cleanly so we don't burn an API
+      // round-trip or trigger any spurious _edited_at stamps.
+      if (Object.keys(payload).length === 0) {
+        setMode("view");
+        toast.info("No changes to save");
+        return;
+      }
+
+      const updated = await updateNote(note.patientId, note.id, payload);
       onUpdated(updated);
       setMode("view");
       toast.success("Note updated");
@@ -2011,6 +2540,7 @@ function NoteDetailDialog({
     setCare(note.careProvided ?? "");
     setStatus(note.patientStatus ?? "");
     setFollowUp(note.followUpNeeded ?? "");
+    setFollowUpEnabled((note.followUpNeeded ?? "").trim().length > 0);
     setMisc(note.miscellaneousNotes ?? "");
     setMode("view");
   };
@@ -2186,6 +2716,8 @@ function NoteDetailDialog({
               <FollowUpField
                 value={followUp}
                 onChange={setFollowUp}
+                enabled={followUpEnabled}
+                onEnabledChange={setFollowUpEnabled}
                 placeholder="e.g. Monitor pain level next round."
               />
               <Field
@@ -2334,6 +2866,21 @@ function describeApiError(err: unknown): string {
   return "Unknown error";
 }
 
+// Numeric age in MONTHS for sort comparisons. Birthdate is the source
+// of truth when present (matches what formatAgeLabel renders), so a
+// patient added a year ago sorts as 1 year older today, and infants
+// who were stored as `age: 0` still sort correctly among each other
+// (5 months < 9 months < 14 months < ...). Legacy rows that have no
+// birthdate fall back to `age * 12` so they slot into the same
+// month-based scale.
+function patientAgeMonths(p: Patient): number {
+  if (p.birthdate && /^\d{4}-\d{2}-\d{2}$/.test(p.birthdate)) {
+    const months = monthsFromBirthdate(p.birthdate);
+    if (months !== null) return months;
+  }
+  return (p.age ?? 0) * 12;
+}
+
 // Sorts and filters the patient list on the client. We have the full list
 // in memory already (one round trip on dashboard mount), so doing this here
 // avoids server churn and keeps the typing-into-the-search-box latency
@@ -2355,10 +2902,10 @@ function filterAndSortPatients(patients: Patient[], search: string, sort: Patien
       filtered.sort((a, b) => b.name.localeCompare(a.name));
       break;
     case "age-young":
-      filtered.sort((a, b) => a.age - b.age);
+      filtered.sort((a, b) => patientAgeMonths(a) - patientAgeMonths(b));
       break;
     case "age-old":
-      filtered.sort((a, b) => b.age - a.age);
+      filtered.sort((a, b) => patientAgeMonths(b) - patientAgeMonths(a));
       break;
   }
   return filtered;

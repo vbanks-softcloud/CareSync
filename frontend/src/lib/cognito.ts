@@ -172,6 +172,11 @@ export type CognitoProfile = {
   /** ISO YYYY-MM-DD. */
   birthdate: string;
   occupation: string;
+  /** Optional avatar identifier. Either `preset:<id>` for a built-in
+   * avatar, or a `data:image/jpeg;base64,...` URL for an uploaded one.
+   * Stored in the standard OIDC `picture` Cognito attribute (~2KB cap).
+   * Empty string is treated the same as "no avatar set". */
+  picture: string;
 };
 
 /** Returns the signed-in user's profile from Cognito, or null if any of the
@@ -189,7 +194,15 @@ export async function fetchProfile(): Promise<CognitoProfile | null> {
     const birthdate = attrs.birthdate?.trim();
     const occupation = attrs["custom:occupation"];
     if (!firstName || !lastName || !birthdate || !occupation) return null;
-    return { firstName, lastName, birthdate, occupation };
+    return {
+      firstName,
+      lastName,
+      birthdate,
+      occupation,
+      // `picture` is optional — fall back to empty string when unset so
+      // the rest of the app can treat it as "no avatar chosen yet".
+      picture: attrs.picture?.trim() ?? "",
+    };
   } catch {
     return null;
   }
@@ -206,6 +219,9 @@ export async function updateProfile(profile: CognitoProfile): Promise<void> {
       family_name: profile.lastName,
       birthdate: profile.birthdate,
       "custom:occupation": profile.occupation,
+      // Always include picture, even when empty, so clearing the avatar
+      // actually overwrites the previously stored value.
+      picture: profile.picture,
     },
   });
 }

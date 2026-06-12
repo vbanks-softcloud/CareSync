@@ -19,6 +19,7 @@ import {
   maxAllowedBirthdate,
   saveUserProfile,
 } from "@/lib/caresync-store";
+import { AvatarPicker } from "@/components/avatar-picker";
 
 export const Route = createFileRoute("/profile")({
   component: ProfileEdit,
@@ -40,6 +41,7 @@ function ProfileEdit() {
   const [lastName, setLastName] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [occupation, setOccupation] = useState<Occupation | "">("");
+  const [picture, setPicture] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -81,6 +83,7 @@ function ProfileEdit() {
       setLastName(p.lastName);
       setBirthdate(p.birthdate);
       setOccupation(p.occupation);
+      setPicture(p.picture);
     }
   }, [navigate]);
 
@@ -89,7 +92,8 @@ function ProfileEdit() {
     (firstName.trim() !== original.firstName ||
       lastName.trim() !== original.lastName ||
       birthdate !== original.birthdate ||
-      occupation !== original.occupation);
+      occupation !== original.occupation ||
+      picture !== original.picture);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,6 +121,7 @@ function ProfileEdit() {
         lastName: lastName.trim(),
         birthdate,
         occupation,
+        picture,
       });
       setOriginal(next);
       setSaved(true);
@@ -185,6 +190,20 @@ function ProfileEdit() {
           )}
 
           <form className="space-y-4" onSubmit={submit} noValidate>
+            {/* Avatar picker stays at the top of the form so changes to
+                it propagate to the dashboard header immediately on save. */}
+            <div className="space-y-1.5">
+              <Label>Avatar</Label>
+              <AvatarPicker
+                value={picture}
+                onChange={setPicture}
+                initials={
+                  (firstName.trim()[0] ?? "").toUpperCase() +
+                  (lastName.trim()[0] ?? "").toUpperCase()
+                }
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="firstName">First name</Label>

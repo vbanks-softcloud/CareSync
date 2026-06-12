@@ -17,6 +17,7 @@ import {
   maxAllowedBirthdate,
   saveUserProfile,
 } from "@/lib/caresync-store";
+import { AvatarPicker } from "@/components/avatar-picker";
 
 export const Route = createFileRoute("/onboarding")({
   component: Onboarding,
@@ -40,6 +41,10 @@ function Onboarding() {
   const [lastName, setLastName] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [occupation, setOccupation] = useState<Occupation | "">("");
+  // Picture is optional — users can skip the picker entirely and we'll
+  // just show their initials in the header. Stored as either
+  // "preset:<id>" or a base64 data URL; see lib/avatar.ts.
+  const [picture, setPicture] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +100,7 @@ function Onboarding() {
         lastName: lastName.trim(),
         birthdate,
         occupation,
+        picture,
       });
       navigate({ to: "/dashboard" });
     } catch (err: unknown) {
@@ -139,6 +145,21 @@ function Onboarding() {
           )}
 
           <form className="space-y-4" onSubmit={submit} noValidate>
+            {/* Avatar picker sits at the top so the user can personalize
+                their account up front. It's optional — skipping it just
+                falls back to initials in the header. */}
+            <div className="space-y-1.5">
+              <Label>Avatar (optional)</Label>
+              <AvatarPicker
+                value={picture}
+                onChange={setPicture}
+                initials={
+                  (firstName.trim()[0] ?? "").toUpperCase() +
+                  (lastName.trim()[0] ?? "").toUpperCase()
+                }
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="firstName">First name</Label>

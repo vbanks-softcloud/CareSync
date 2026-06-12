@@ -276,6 +276,12 @@ export type UserProfile = {
    * stale year over year. */
   birthdate: string;
   occupation: Occupation;
+  /** Avatar identifier. Either `preset:<id>` for a built-in avatar
+   * (e.g. "preset:bear") or a `data:image/jpeg;base64,...` URL for an
+   * uploaded image. Empty string means "no avatar chosen", in which
+   * case the UI falls back to the user's initials. Persisted via the
+   * standard OIDC `picture` Cognito attribute. */
+  picture: string;
   createdAt: number;
 };
 
@@ -345,6 +351,7 @@ export async function getUserProfile(email: string): Promise<UserProfile | null>
         lastName: remote.lastName,
         birthdate: remote.birthdate,
         occupation: remote.occupation as Occupation,
+        picture: remote.picture,
         createdAt: cached?.createdAt ?? Date.now(),
       };
       write(profileKey(email), profile);
@@ -370,6 +377,7 @@ export async function saveUserProfile(
       lastName: profile.lastName,
       birthdate: profile.birthdate,
       occupation: profile.occupation,
+      picture: profile.picture,
     });
   }
   const existing = getCachedUserProfile(email);
